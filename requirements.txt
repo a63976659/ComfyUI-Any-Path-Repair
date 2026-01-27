@@ -1,0 +1,2 @@
+# 此插件不需要额外的依赖
+# This plugin does not require additional dependencies
