@@ -54,7 +54,8 @@ ComfyUI任意模型路径修复工具 (模型路径智能修复)
 方法1
 1. 点击页面上方的code，点击Download ZIP。
 2. 下载解压：
-* 进入 `ComfyUI/custom_nodes/` 目录，解压并重启ComfyUI 。
+ 进入 `ComfyUI/custom_nodes/` 目录，解压并重启ComfyUI 。
+ 
 方法2
 1. 在 `ComfyUI/custom_nodes/` 文件夹右键。
 2. 选择在终端中打开（或者文件地址栏输入cmd）。
