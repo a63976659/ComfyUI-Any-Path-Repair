@@ -51,10 +51,17 @@ ComfyUI任意模型路径修复工具 (模型路径智能修复)
 
 ### 安装
 
+方法1
 1. 进入 `ComfyUI/custom_nodes/` 目录。
 2. 克隆本项目或下载解压：
-* 文件夹名称请确保为：`ComfyUI_Any_path_repair` (推荐) 或 `ComfyUI_Model_Path_Fixer`。
-* **注意**：请勿在文件夹名称中使用连字符 `-`。
+* 文件夹名称请确保为：`ComfyUI-Any-Path-Repair` 。
+方法2
+1. 在 `ComfyUI/custom_nodes/` 文件夹右键。
+2. 选择在终端中打开（或者文件地址栏输入cmd）。
+3. 输入git clone https://github.com/a63976659/ComfyUI-Any-Path-Repair.git并回车。
+4. 安装完成后，重启ComfyUI
+
+* **注意**：git失败，参考此视频教程安装 `https://www.bilibili.com/video/BV1ecMnzQEfc/`。
 
 
 
