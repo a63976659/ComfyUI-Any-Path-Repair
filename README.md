@@ -1,6 +1,6 @@
 # 🔧 ComfyUI Any Path Repair
 ComfyUI任意模型路径修复工具 (模型路径智能修复)
-告别“红框”报错，一键修复 ComfyUI 模型路径验证
+告别“红框”报错，一键修复 ComfyUI 模型加载器路径错误。
 
 导入别人的工作流（Workflow）时，你是否经常遇到满屏的红色节点？
 仅仅因为对方把模型放在 `其它` 文件夹，而你放在根目录，ComfyUI 就无法识别？
@@ -52,9 +52,9 @@ ComfyUI任意模型路径修复工具 (模型路径智能修复)
 ### 安装
 
 方法1
-1. 进入 `ComfyUI/custom_nodes/` 目录。
-2. 克隆本项目或下载解压：
-* 文件夹名称请确保为：`ComfyUI-Any-Path-Repair` 。
+1. 点击页面上方的code，点击Download ZIP。
+2. 下载解压：
+* 进入 `ComfyUI/custom_nodes/` 目录，解压并重启ComfyUI 。
 方法2
 1. 在 `ComfyUI/custom_nodes/` 文件夹右键。
 2. 选择在终端中打开（或者文件地址栏输入cmd）。
