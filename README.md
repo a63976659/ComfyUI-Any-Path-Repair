@@ -93,3 +93,17 @@ A: 插件仅修改当前页面上节点的“选中值”，不会修改你硬�
 ---
 
 **ComfyUI Any Path Repair** —— 让分享与复现变得简单。
+---
+
+如果你觉得插件还不错可以点个收藏。
+
+我的哔哩哔哩主页：https://space.bilibili.com/2114638644
+
+我的小红书：猪的飞行梦
+
+ComfyUI交流QQ群：202018000
+
+想支持一下作者可以扫个码😀😀😀
+养家版二维码❥(^_-)
+![收款二维码](https://github.com/user-attachments/assets/687a3fc3-2511-47c7-bc71-1e06527dbe01)
+
