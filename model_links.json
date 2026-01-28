@@ -1,0 +1,16 @@
+{
+    "checkpoints": {
+        "v1-5-pruned-emaonly.ckpt": "https://huggingface.co/runwayml/stable-diffusion-v1-5/resolve/main/v1-5-pruned-emaonly.ckpt",
+        "sd_xl_base_1.0.safetensors": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/sd_xl_base_1.0.safetensors"
+    },
+    "loras": {
+        "detailer.safetensors": "https://civitai.com/api/download/models/12345",
+        "LCM_LoRA_Weights.safetensors": "https://huggingface.co/latent-consistency/lcm-lora-sdv1-5/resolve/main/pytorch_lora_weights.safetensors"
+    },
+    "vae": {
+        "vae-ft-mse-840000-ema-pruned.safetensors": "https://huggingface.co/stabilityai/sd-vae-ft-mse-original/resolve/main/vae-ft-mse-840000-ema-pruned.safetensors"
+    },
+    "upscale_models": {
+        "4x-UltraSharp.pth": "https://civitai.com/api/download/models/125843"
+    }
+}

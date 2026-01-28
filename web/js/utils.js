@@ -20,13 +20,19 @@ export function log(...args) {
 
 /**
  * 调用后端修复接口
+ * [核心修改] 增加了 dynamicLinks 参数，用于发送从工作流 Note 中提取的链接
  * @param {Array} queries 需要查询的节点列表
+ * @param {Object} dynamicLinks 从前端提取的动态链接字典
  */
-export async function fetchFixPaths(queries) {
+export async function fetchFixPaths(queries, dynamicLinks = {}) {
     try {
         const response = await api.fetchApi("/model_path_fixer/fix", {
             method: "POST",
-            body: JSON.stringify({ queries: queries }),
+            // 将 queries 和 dynamic_links 一起打包发给后端
+            body: JSON.stringify({ 
+                queries: queries,
+                dynamic_links: dynamicLinks 
+            }),
             headers: { "Content-Type": "application/json" }
         });
         

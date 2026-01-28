@@ -2,6 +2,7 @@ import server
 from aiohttp import web
 import folder_paths
 import os
+import json
 
 # 定义支持的模型类型映射
 TYPE_MAPPING = {
@@ -18,37 +19,43 @@ TYPE_MAPPING = {
 }
 
 def normalize_path(path):
-    """
-    标准化路径：统一使用 / 作为分隔符，并去除首尾空格
-    用于解决 Windows 反斜杠导致的匹配失败问题
-    """
     if not path:
         return ""
-    # 将反斜杠替换为正斜杠
     norm = path.replace("\\", "/")
-    # 去除多余的 ./ 前缀 (如果有)
     if norm.startswith("./"):
         norm = norm[2:]
     return norm.strip()
 
+def load_local_links():
+    """
+    [优化] 一次性读取并缓存本地 JSON 文件
+    """
+    try:
+        current_dir = os.path.dirname(os.path.realpath(__file__))
+        json_path = os.path.join(current_dir, "model_links.json")
+        
+        if os.path.exists(json_path):
+            with open(json_path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+    except Exception as e:
+        print(f"❌ [Model Path Fixer] JSON 读取失败: {e}")
+    
+    return {} # 读取失败返回空字典
+
 def find_all_matching_paths(model_type, filename):
-    """
-    返回所有匹配文件名的路径列表
-    """
     if model_type not in TYPE_MAPPING.values():
         return []
-    
     try:
+        # 获取该类型下的所有文件名
         available_files = folder_paths.get_filename_list(model_type)
     except:
         return []
         
     target_basename = os.path.basename(normalize_path(filename))
     matches = []
-
-    # 遍历所有文件，找到所有 basename 相同的文件
+    
+    # 遍历查找匹配项
     for file_path in available_files:
-        # 同样标准化文件名进行对比
         if os.path.basename(normalize_path(file_path)) == target_basename:
             matches.append(file_path)
             
@@ -56,43 +63,76 @@ def find_all_matching_paths(model_type, filename):
 
 @server.PromptServer.instance.routes.post("/model_path_fixer/fix")
 async def fix_model_paths(request):
-    json_data = await request.json()
-    query_list = json_data.get("queries", [])
-    
-    results = []
-    
-    for item in query_list:
-        current_val = item.get("current_val")
-        widget_type = item.get("type")
+    try:
+        json_data = await request.json()
+        query_list = json_data.get("queries", [])
+        dynamic_links = json_data.get("dynamic_links", {})
         
-        model_type = TYPE_MAPPING.get(widget_type)
+        # [核心优化] 在循环开始前，先把本地数据库读进内存！
+        # 这样无论有多少个节点，只读一次硬盘。
+        local_links_db = load_local_links()
         
-        if not current_val or not isinstance(current_val, str) or not model_type:
-            continue
+        results = []
+        
+        for item in query_list:
+            current_val = item.get("current_val")
+            widget_type = item.get("type")
             
-        # 获取所有可能的匹配项
-        candidates = find_all_matching_paths(model_type, current_val)
-        
-        if candidates:
-            # 关键修复：进行标准化的对比
-            # 如果当前值(标准化后) 已经存在于 候选列表(标准化后) 中
-            # 说明当前的路径已经是正确的，绝对不要乱动它！
-            norm_current = normalize_path(current_val).lower() # 忽略大小写
-            norm_candidates = [normalize_path(c).lower() for c in candidates]
+            model_type = TYPE_MAPPING.get(widget_type)
             
-            if norm_current in norm_candidates:
+            if not current_val or not isinstance(current_val, str) or not model_type:
                 continue
-
-            results.append({
-                "id": item.get("id"),
-                "widget_name": widget_type,
-                "old_value": current_val,
-                "candidates": candidates
-            })
+                
+            # 1. 查找本地文件
+            candidates = find_all_matching_paths(model_type, current_val)
             
-    return web.json_response({"fixed": results})
+            if candidates:
+                # 检查是否已经正确
+                norm_current = normalize_path(current_val).lower()
+                norm_candidates = [normalize_path(c).lower() for c in candidates]
+                
+                if norm_current in norm_candidates:
+                    continue
 
+                results.append({
+                    "id": item.get("id"),
+                    "widget_name": widget_type,
+                    "old_value": current_val,
+                    "candidates": candidates,
+                    "download_url": None,
+                    "model_type": model_type
+                })
+            
+            else:
+                # 2. 查找下载链接 (优先看 dynamic_links，其次看 local_links_db)
+                target_name = os.path.basename(normalize_path(current_val))
+                download_link = None
+                
+                # A. 检查动态链接 (前端提取的)
+                if model_type in dynamic_links and target_name in dynamic_links[model_type]:
+                    download_link = dynamic_links[model_type][target_name]
+                
+                # B. 检查本地数据库 (刚读入内存的)
+                elif model_type in local_links_db and target_name in local_links_db[model_type]:
+                    download_link = local_links_db[model_type][target_name]
+
+                results.append({
+                    "id": item.get("id"),
+                    "widget_name": widget_type,
+                    "old_value": current_val,
+                    "candidates": [],
+                    "download_url": download_link,
+                    "model_type": model_type
+                })
+                
+        return web.json_response({"fixed": results})
+
+    except Exception as e:
+        print(f"❌ [Model Path Fixer] 后端严重错误: {e}")
+        return web.json_response({"fixed": [], "error": str(e)})
+
+# 必须保留的映射
 NODE_CLASS_MAPPINGS = {}
 NODE_DISPLAY_NAME_MAPPINGS = {}
 WEB_DIRECTORY = "./web"
-print("🔧 Model Path Fixer: Loaded.")
+print("🔧 Model Path Fixer: Loaded (Optimized).")
