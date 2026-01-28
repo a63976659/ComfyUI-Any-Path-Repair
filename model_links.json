@@ -3,14 +3,46 @@
         "v1-5-pruned-emaonly.ckpt": "https://huggingface.co/runwayml/stable-diffusion-v1-5/resolve/main/v1-5-pruned-emaonly.ckpt",
         "sd_xl_base_1.0.safetensors": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/sd_xl_base_1.0.safetensors"
     },
-    "loras": {
-        "detailer.safetensors": "https://civitai.com/api/download/models/12345",
-        "LCM_LoRA_Weights.safetensors": "https://huggingface.co/latent-consistency/lcm-lora-sdv1-5/resolve/main/pytorch_lora_weights.safetensors"
+    "unet": {
+        "__comment": "对应 diffusion_models",
+        "flux1-dev.safetensors": "https://huggingface.co/black-forest-labs/FLUX.1-dev/resolve/main/flux1-dev.safetensors",
+        "Wan2_1-I2V-14B-480p_fp8.safetensors": "https://huggingface.co/Kijai/WanVideo_comfy_fp8_scaled/resolve/main/I2V/Wan2_1-I2V-14B-480p_fp8_e4m3fn_scaled_KJ.safetensors"
     },
     "vae": {
-        "vae-ft-mse-840000-ema-pruned.safetensors": "https://huggingface.co/stabilityai/sd-vae-ft-mse-original/resolve/main/vae-ft-mse-840000-ema-pruned.safetensors"
+        "vae-ft-mse-840000-ema-pruned.safetensors": "https://huggingface.co/stabilityai/sd-vae-ft-mse-original/resolve/main/vae-ft-mse-840000-ema-pruned.safetensors",
+        "ae.safetensors": "https://huggingface.co/black-forest-labs/FLUX.1-dev/resolve/main/ae.safetensors"
+    },
+    "loras": {
+        "__comment": "对应 model_patches",
+        "LCM_LoRA_Weights.safetensors": "https://huggingface.co/latent-consistency/lcm-lora-sdv1-5/resolve/main/pytorch_lora_weights.safetensors"
+    },
+    "clip": {
+        "__comment": "对应 text_encoders",
+        "t5xxl_fp8_e4m3fn.safetensors": "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/t5xxl_fp8_e4m3fn.safetensors",
+        "clip_l.safetensors": "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/clip_l.safetensors"
+    },
+    "controlnet": {
+        "control_v11p_sd15_canny.pth": "https://huggingface.co/lllyasviel/ControlNet-v1-1/resolve/main/control_v11p_sd15_canny.pth",
+        "diffusers_xl_canny_full.safetensors": "https://huggingface.co/lllyasviel/sd_control_collection/resolve/main/diffusers_xl_canny_full.safetensors"
+    },
+    "style_models": {
+        "ip-adapter_sd15.bin": "https://huggingface.co/h94/IP-Adapter/resolve/main/models/ip-adapter_sd15.bin"
+    },
+    "clip_vision": {
+        "CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors": "https://huggingface.co/h94/IP-Adapter/resolve/main/models/image_encoder/model.safetensors"
     },
     "upscale_models": {
         "4x-UltraSharp.pth": "https://civitai.com/api/download/models/125843"
+    },
+    "embeddings": {
+        "EasyNegative.safetensors": "https://huggingface.co/datasets/gsdf/EasyNegative/resolve/main/EasyNegative.safetensors"
+    },
+    "audio_checkpoints": {
+        "__comment": "对应 audio_encoders",
+        "wav2vec2-chinese-base_fp16.safetensors": "https://huggingface.co/Kijai/wav2vec2_safetensors/resolve/main/wav2vec2-chinese-base_fp16.safetensors"
+    },
+    "latent_upscale_models": {
+        "__comment": "Latent放大模型，若无专用文件夹通常在 checkpoints 中",
+        "example_model.safetensors": "https://example.com/model.safetensors"
     }
 }

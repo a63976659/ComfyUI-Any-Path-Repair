@@ -5,17 +5,32 @@ import os
 import json
 
 # 定义支持的模型类型映射
+# 左侧是前端组件名 (Widget Name)，右侧是 ComfyUI 文件夹名 (Folder Name)
 TYPE_MAPPING = {
+    # 基础模型
     "ckpt_name": "checkpoints",
     "vae_name": "vae",
-    "lora_name": "loras",
-    "clip_name": "clip",
-    "unet_name": "unet",
+    "lora_name": "loras",             # 对应 model_patches
+    
+    # 扩散与文本编码
+    "unet_name": "unet",              # 对应 diffusion_models
+    "diffusion_model_name": "unet",   # 兼容部分节点的命名
+    "clip_name": "clip",              # 对应 text_encoders
+    "text_encoder_name": "clip",      # 兼容部分节点的命名
+    
+    # 控制与风格
     "control_net_name": "controlnet",
     "style_model_name": "style_models",
     "clip_vision_name": "clip_vision",
+    
+    # 放大与嵌入
     "upscale_model_name": "upscale_models",
-    "embedding_name": "embeddings"
+    "embedding_name": "embeddings",
+    
+    # 新增支持
+    "audio_checkpoint_name": "audio_checkpoints", # 对应 audio_encoders
+    "audio_model_name": "audio_checkpoints",      # 兼容不同音频节点
+    "latent_upscale_model_name": "latent_upscale_models" 
 }
 
 def normalize_path(path):
