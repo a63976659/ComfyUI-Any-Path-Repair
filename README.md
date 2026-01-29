@@ -300,7 +300,7 @@ git clone https://github.com/a63976659/ComfyUI-Any-Path-Repair.git
 
 ## 📄 许可证 (License)
 
-本项目采用 **MIT 许可证** - 查看 [LICENSE](LICENSE) 文件了解详情。
+本项目采用 **Apache-2.0 license** - 查看 [LICENSE](LICENSE) 文件了解详情。
 
 ---
 
