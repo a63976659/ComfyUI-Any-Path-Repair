@@ -1,7 +1,7 @@
 import os
 import folder_paths
 from aiohttp import web
-from .core_utils import normalize_path, load_local_links # <--- 已更新引用
+from .core_utils import normalize_path, load_local_links
 from .config import get_type_mapping
 
 def build_file_index(model_types):
@@ -33,7 +33,7 @@ async def handle_fix_request(request):
             std_type = type_mapping.get(w_type)
             if std_type: relevant_types.add(std_type)
             else:
-                relevant_types.update(["checkpoints", "loras", "clip", "unet", "vae"])
+                relevant_types.update(["checkpoints", "loras", "clip", "unet", "vae", "diffusion_models"])
         
         file_index = build_file_index(list(relevant_types))
         
@@ -44,6 +44,22 @@ async def handle_fix_request(request):
             widget_type = item.get("type")
             standard_type = type_mapping.get(widget_type)
             
+            # [核心优化 1] 路径前缀优先原则
+            # 如果当前值包含路径 (例如 "diffusion_models/model.pt")，尝试从中提取类型
+            # 这能解决组件是 unet_name 但实际路径在 diffusion_models 的问题
+            norm_val = normalize_path(current_val)
+            if "/" in norm_val:
+                parts = norm_val.split("/")
+                potential_folder = parts[0].lower() # 取第一层文件夹
+                
+                # 检查这个文件夹是否是有效的 ComfyUI 模型目录
+                # 我们遍历所有已知的文件夹类型来匹配
+                for known_type in folder_paths.folder_names_and_paths:
+                    if known_type.lower() == potential_folder:
+                        standard_type = known_type
+                        break
+
+            # 模糊匹配兜底
             if not standard_type:
                 w_lower = widget_type.lower()
                 if "clip" in w_lower or "text_encoder" in w_lower: standard_type = "clip"
@@ -51,7 +67,7 @@ async def handle_fix_request(request):
                 elif "lora" in w_lower: standard_type = "loras"
                 elif "checkpoint" in w_lower: standard_type = "checkpoints"
             
-            target_basename = os.path.basename(normalize_path(current_val)).lower()
+            target_basename = os.path.basename(norm_val).lower()
             
             # 1. 查找本地文件
             candidates = []
@@ -61,7 +77,7 @@ async def handle_fix_request(request):
                 candidates = same_type if same_type else other_type
 
             # 2. 检查是否已存在
-            norm_current = normalize_path(current_val).lower()
+            norm_current = norm_val.lower()
             norm_candidates = [normalize_path(c).lower() for c in candidates]
             if norm_current in norm_candidates: continue 
 

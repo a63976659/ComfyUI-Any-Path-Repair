@@ -9,7 +9,6 @@ from .core_utils import normalize_path, parse_hf_url
 
 # 状态管理
 active_downloads = set()
-# 用于控制中断: { filename: threading.Event() }
 cancel_flags = {}
 download_lock = threading.Lock()
 
@@ -27,12 +26,27 @@ def download_with_progress(url, save_path, filename_for_msg, cancel_event):
     import urllib.request
 
     print(f"\n⬇️ [Path Fixer] 开始下载: {filename_for_msg}")
+    print(f"   直链地址: {url}")
     
     try:
-        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req) as response:
+        # 增加 User-Agent，防止被服务器拒绝
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        }
+        
+        req = urllib.request.Request(url, headers=headers)
+        
+        # 设置超时时间，防止无限卡死
+        with urllib.request.urlopen(req, timeout=30) as response:
             total_size = int(response.info().get('Content-Length', 0))
             
+            # [检查] 如果返回的是 HTML (比如 404 页面或登录页)，Content-Type 会包含 text/html
+            content_type = response.info().get('Content-Type', '')
+            if 'text/html' in content_type and total_size < 100 * 1024: # 小于100KB的HTML通常是报错页
+                 # 读取一点看看是不是错误信息
+                preview = response.read(1000).decode('utf-8', errors='ignore')
+                raise Exception(f"下载链接无效 (返回了HTML页面): {preview[:100]}...")
+
             with open(save_path, 'wb') as out_file:
                 downloaded_size = 0
                 block_size = 8192 * 4 
@@ -40,34 +54,31 @@ def download_with_progress(url, save_path, filename_for_msg, cancel_event):
                 start_time = time.time()
                 
                 while True:
-                    # [关键] 检查是否被用户中断
                     if cancel_event.is_set():
                         print(f"\n🚫 [Path Fixer] 用户中断下载: {filename_for_msg}")
                         return False, "用户中断"
 
-                    buffer = response.read(block_size)
+                    try:
+                        buffer = response.read(block_size)
+                    except Exception as e:
+                        raise Exception(f"网络读取中断: {str(e)}")
+
                     if not buffer:
                         break
                     
                     out_file.write(buffer)
                     downloaded_size += len(buffer)
                     
-                    # 1. 控制台进度条 (每0.5秒刷新一次，避免日志过多)
+                    # 控制台进度条
                     current_time = time.time()
                     if current_time - last_report_time > 0.5:
                         progress = (downloaded_size / total_size) * 100 if total_size > 0 else 0
                         speed = downloaded_size / (current_time - start_time + 0.001) / 1024 / 1024 # MB/s
-                        # 使用 sys.stdout 实现单行刷新
                         sys.stdout.write(f"\r⏳ 下载中 [{filename_for_msg}]: {progress:.1f}% | {speed:.2f} MB/s")
                         sys.stdout.flush()
-                        
-                        # 2. 依然发送 WebSocket (为了前端知道什么时候变回 '完成' 状态，但不发频繁进度了)
-                        # 用户要求控制台显示进度，UI上我们只在开始和结束通知即可，
-                        # 或者为了防止 UI 假死，还是保留低频的心跳包
                         report_progress(filename_for_msg, downloaded_size, total_size)
                         last_report_time = current_time
             
-            # 下载完成，换行
             sys.stdout.write(f"\r✅ 下载完成 [{filename_for_msg}]: 100%                 \n")
             sys.stdout.flush()
             report_progress(filename_for_msg, downloaded_size, total_size)
@@ -88,7 +99,15 @@ def run_download_task(url, repo_id, filename, save_dir, source="HF Mirror"):
     safe_filename = os.path.basename(filename) 
     full_path = os.path.join(save_dir, safe_filename)
     
-    # 创建该任务的中断标记
+    # [核心修复 1] 处理 URL：强制替换镜像域名 & 修正 /blob/ 为 /resolve/
+    final_url = url
+    if source == "HF Mirror":
+        # 简单替换域名，因为 urllib 不认识环境变量 HF_ENDPOINT
+        final_url = final_url.replace("huggingface.co", "hf-mirror.com")
+    
+    # [核心修复 2] 确保是直链 (resolve) 而不是网页预览链接 (blob)
+    final_url = final_url.replace("/blob/", "/resolve/")
+
     cancel_event = threading.Event()
     with download_lock:
         cancel_flags[safe_filename] = cancel_event
@@ -98,7 +117,6 @@ def run_download_task(url, repo_id, filename, save_dir, source="HF Mirror"):
     
     try:
         if source == "ModelScope":
-            # ModelScope 暂不支持中断逻辑
             try:
                 from modelscope.hub.file_download import model_file_download
                 pass 
@@ -106,22 +124,33 @@ def run_download_task(url, repo_id, filename, save_dir, source="HF Mirror"):
                 raise ImportError("未安装 modelscope")
         else:
             if not os.path.exists(save_dir): os.makedirs(save_dir)
-            success, error_msg = download_with_progress(url, full_path, safe_filename, cancel_event)
+            success, error_msg = download_with_progress(final_url, full_path, safe_filename, cancel_event)
             
             if not success and error_msg == "用户中断":
-                # 如果是中断，删除未下载完的文件
                 if os.path.exists(full_path):
                     try: os.remove(full_path)
                     except: pass
                 raise Exception("下载已中断")
             
             if not success: raise Exception(error_msg)
+            
+            # [核心修复 3] 下载完成后检查文件大小
+            if os.path.exists(full_path) and os.path.getsize(full_path) < 1024:
+                # 如果文件小于 1KB，极有可能是错误的空文件
+                try: os.remove(full_path)
+                except: pass
+                raise Exception("下载失败：文件为空或过小 (可能是链接错误)")
 
         success = True
 
     except Exception as e:
         error_msg = str(e)
         success = False
+        # 失败时清理残留文件
+        if os.path.exists(full_path):
+            try: os.remove(full_path)
+            except: pass
+            
     finally:
         with download_lock:
             active_downloads.discard(safe_filename)
@@ -174,14 +203,13 @@ async def handle_download_request(request):
                 active_downloads.discard(safe_filename)
         return web.json_response({"success": False, "message": str(e)})
 
-# [新增] 处理中断请求
 async def handle_cancel_request(request):
     try:
         json_data = await request.json()
         filename = json_data.get("filename")
         with download_lock:
             if filename in cancel_flags:
-                cancel_flags[filename].set() # 触发中断信号
+                cancel_flags[filename].set() 
                 return web.json_response({"success": True, "message": "中断信号已发送"})
             else:
                 return web.json_response({"success": False, "message": "任务不存在或已结束"})
