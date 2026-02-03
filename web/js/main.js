@@ -1,59 +1,46 @@
 import { app } from "../../../scripts/app.js";
-import { error, log, isModelWidget, fetchFixPaths } from "./utils.js";
+import { error, log, isModelWidget, fetchFixPaths, fetchActiveDownloads } from "./utils.js";
 import { FixerUI } from "./ui.js";
 
-const CATEGORY_MAP = {
-    "diffusion_models": "unet",
-    "checkpoints": "checkpoints",
-    "text_encoders": "clip",
-    "model_patches": "loras",
-    "loras": "loras",
-    "vae": "vae",
-    "controlnet": "controlnet",
-    "upscale_models": "upscale_models",
-    "audio_encoders": "audio_checkpoints"
+// [核心] 全局缓存，用于在重新打开 UI 时恢复上一次的扫描结果
+let cachedScanResult = {
+    conflicts: [],
+    downloads: [],
+    unknowns: []
 };
 
 function extractLinksFromWorkflow(graph) {
     const dynamicLinks = {}; 
-    const startTime = Date.now();
     const TIMEOUT_MS = 3000; 
-
-    console.log("[PathFixer] 开始扫描工作区链接...");
+    const startTime = Date.now();
+    dynamicLinks["uncategorized"] = {};
 
     for (const node of graph._nodes) {
-        if (Date.now() - startTime > TIMEOUT_MS) {
-            console.warn(`[PathFixer] ⚠️ 工作区扫描超时 (> ${TIMEOUT_MS}ms)，已跳过剩余节点检测。`);
-            break; 
-        }
-
+        if (Date.now() - startTime > TIMEOUT_MS) break;
         if (!node.widgets) continue;
 
         for (const widget of node.widgets) {
-            if (typeof widget.value !== "string" || !widget.value.includes("](") || !widget.value.includes("http")) {
-                continue;
-            }
+            if (typeof widget.value !== "string" || !widget.value.includes("http")) continue;
 
             const text = widget.value;
             const lines = text.split("\n");
-            let currentCategory = "unknown";
+            let currentCategory = "uncategorized";
 
             for (const line of lines) {
                 const trimmed = line.trim();
-                const headerMatch = trimmed.match(/^(?:\*\*|\#\#)\s*([a-zA-Z0-9_\-]+)/);
+                if (!trimmed) continue;
+                const headerMatch = trimmed.match(/^(?:\*\*|\#\#)?\s*([a-zA-Z0-9_\-\s]+?)(?:\s*\*\*)?(?:\s*:)?$/);
                 if (headerMatch) {
-                    const rawHeader = headerMatch[1].toLowerCase();
-                    currentCategory = CATEGORY_MAP[rawHeader] || rawHeader;
-                    continue;
+                    if (!trimmed.includes("http") && !trimmed.includes("]")) {
+                        currentCategory = headerMatch[1].trim().toLowerCase().replace(/\s+/g, "_");
+                        continue;
+                    }
                 }
-
                 const linkMatch = trimmed.match(/\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/);
                 if (linkMatch) {
                     const fileName = linkMatch[1].trim();
                     const url = linkMatch[2].trim();
-                    if (!dynamicLinks[currentCategory]) {
-                        dynamicLinks[currentCategory] = {};
-                    }
+                    if (!dynamicLinks[currentCategory]) dynamicLinks[currentCategory] = {};
                     dynamicLinks[currentCategory][fileName] = url;
                 }
             }
@@ -64,9 +51,39 @@ function extractLinksFromWorkflow(graph) {
 
 async function executePathFix(uiInstance) {
     const graph = app.graph;
-    const queries = [];
     
+    // ============================================
+    // [核心需求] 1. 先检查后台是否有下载任务
+    // ============================================
+    const activeDownloads = await fetchActiveDownloads();
+    if (activeDownloads.length > 0) {
+        // 如果有正在下载的任务，且我们有缓存，直接恢复 UI
+        // 这样点击“修复”按钮变成了“查看状态”功能
+        console.log("[PathFixer] 检测到后台任务，恢复 UI 界面");
+        uiInstance.setButtonState(true, "查看状态..."); // 瞬间状态
+        
+        // 恢复上次的数据，这样用户能看到那个下载按钮
+        // 如果没有缓存（比如刷新过页面），可能需要重新扫描，但为了安全我们只显示状态
+        uiInstance.showResultDialog(
+            cachedScanResult.conflicts, 
+            cachedScanResult.downloads, 
+            cachedScanResult.unknowns, 
+            (map) => applyFixes(graph, map) // 保持 callback
+        );
+        uiInstance.setButtonState(false); // 恢复按钮可点
+        return;
+    }
+
+    // ============================================
+    // 2. 正常流程：没有下载任务，开始扫描
+    // ============================================
+    
+    const queries = [];
     uiInstance.setButtonState(true, "扫描中...");
+    
+    // 清空缓存
+    cachedScanResult = { conflicts: [], downloads: [], unknowns: [] };
+
     const dynamicLinks = extractLinksFromWorkflow(graph);
     
     try {
@@ -91,13 +108,11 @@ async function executePathFix(uiInstance) {
         }
 
         uiInstance.setButtonState(true, "匹配中...");
-        
         const data = await fetchFixPaths(queries, dynamicLinks);
         const results = data.fixed || [];
 
         if (results.length === 0) {
-            // [修改] 提示语更简洁
-            alert("✅ 模型路径正确");
+            alert("✅ 所有模型路径均正确，无需修复。");
             uiInstance.setButtonState(false);
             return;
         }
@@ -115,19 +130,16 @@ async function executePathFix(uiInstance) {
                     unknowns.push(res);
                 }
             } else if (res.candidates.length === 1) {
-                autoFixes.push({
-                    id: res.id,
-                    widget_name: res.widget_name,
-                    new_value: res.candidates[0],
-                    old_value: res.old_value
-                });
+                autoFixes.push({ id: res.id, widget_name: res.widget_name, new_value: res.candidates[0], old_value: res.old_value });
             } else {
                 conflicts.push(res);
             }
         });
 
-        let fixedCount = 0;
+        // 更新缓存
+        cachedScanResult = { conflicts, downloads, unknowns };
 
+        let fixedCount = 0;
         if (autoFixes.length > 0) {
             applyFixes(graph, autoFixes);
             fixedCount += autoFixes.length;
@@ -141,12 +153,7 @@ async function executePathFix(uiInstance) {
                     const key = `${conflict.id}-${conflict.widget_name}`;
                     const selectedPath = userSelectionMap.get(key);
                     if (selectedPath) {
-                        manualFixes.push({
-                            id: conflict.id,
-                            widget_name: conflict.widget_name,
-                            new_value: selectedPath,
-                            old_value: conflict.old_value
-                        });
+                        manualFixes.push({ id: conflict.id, widget_name: conflict.widget_name, new_value: selectedPath, old_value: conflict.old_value });
                     }
                 });
                 applyFixes(graph, manualFixes);
@@ -159,14 +166,7 @@ async function executePathFix(uiInstance) {
 
     } catch (e) {
         error("执行修复流程出错:", e);
-        alert("修复过程发生错误，请查看控制台 (F12)。");
-    } finally {
-        setTimeout(() => {
-            const dialog = document.querySelector(".fixer-dialog-overlay");
-            if (!dialog) {
-                uiInstance.setButtonState(false);
-            }
-        }, 500);
+        uiInstance.setButtonState(false);
     }
 }
 
@@ -201,13 +201,8 @@ function applyFixes(graph, fixList) {
 function finishProcess(uiInstance, graph, count) {
     if (count > 0) {
         app.graph.setDirtyCanvas(true, true);
-        setTimeout(() => {
-            alert(`✅ 成功修复了 ${count} 个模型路径！\n如果有手动下载的模型，请下载后点击刷新。`);
-        }, 100);
         uiInstance.setButtonState(false, `已修复 ${count}`);
     } else {
-        // 如果这里也想统一提示，也可以改成：
-        // alert("✅ 模型路径正确");
         uiInstance.setButtonState(false);
     }
     setTimeout(() => uiInstance.setButtonState(false), 2000);

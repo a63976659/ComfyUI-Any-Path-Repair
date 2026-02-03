@@ -1,45 +1,21 @@
-/**
- * ComfyUI-Model-Path-Fixer 工具模块
- */
-
 import { api } from "../../../scripts/api.js";
 
-/**
- * 统一错误日志
- */
 export function error(...args) {
     console.error("[Path-Fixer]", ...args);
 }
 
-/**
- * 统一信息日志
- */
 export function log(...args) {
     console.log("[Path-Fixer]", ...args);
 }
 
-/**
- * 调用后端修复接口
- * [核心修改] 增加了 dynamicLinks 参数，用于发送从工作流 Note 中提取的链接
- * @param {Array} queries 需要查询的节点列表
- * @param {Object} dynamicLinks 从前端提取的动态链接字典
- */
 export async function fetchFixPaths(queries, dynamicLinks = {}) {
     try {
         const response = await api.fetchApi("/model_path_fixer/fix", {
             method: "POST",
-            // 将 queries 和 dynamic_links 一起打包发给后端
-            body: JSON.stringify({ 
-                queries: queries,
-                dynamic_links: dynamicLinks 
-            }),
+            body: JSON.stringify({ queries, dynamic_links: dynamicLinks }),
             headers: { "Content-Type": "application/json" }
         });
-        
-        if (!response.ok) {
-            throw new Error(`API Error: ${response.status}`);
-        }
-        
+        if (!response.ok) throw new Error(`API Error: ${response.status}`);
         return await response.json();
     } catch (e) {
         error("请求后端失败:", e);
@@ -47,16 +23,68 @@ export async function fetchFixPaths(queries, dynamicLinks = {}) {
     }
 }
 
-/**
- * 组件名称到模型类型的映射检查
- * @param {string} widgetName 
- * @returns {boolean}
- */
+export async function fetchActiveDownloads() {
+    try {
+        const response = await api.fetchApi("/model_path_fixer/active_tasks");
+        if (!response.ok) return [];
+        const data = await response.json();
+        return data.active || [];
+    } catch (e) {
+        return [];
+    }
+}
+
+export async function downloadModelFromServer(url, filename, modelType) {
+    try {
+        const response = await api.fetchApi("/model_path_fixer/download", {
+            method: "POST",
+            body: JSON.stringify({
+                url: url,
+                model_type: modelType,
+                source: "HF Mirror" 
+            }),
+            headers: { "Content-Type": "application/json" }
+        });
+
+        if (!response.ok) throw new Error(`Network Error: ${response.status}`);
+        return await response.json(); 
+    } catch (e) {
+        return { success: false, message: e.message };
+    }
+}
+
+// [新增] 中断下载
+export async function cancelDownloadFromServer(filename) {
+    try {
+        const response = await api.fetchApi("/model_path_fixer/cancel", {
+            method: "POST",
+            body: JSON.stringify({ filename: filename }),
+            headers: { "Content-Type": "application/json" }
+        });
+        return await response.json();
+    } catch (e) {
+        return { success: false, message: e.message };
+    }
+}
+
 export function isModelWidget(widgetName) {
-    const TARGET_WIDGETS = [
+    if (!widgetName) return false;
+    const name = widgetName.toLowerCase();
+    
+    const EXACT_MATCH = [
         "ckpt_name", "vae_name", "lora_name", "clip_name", 
+        "clip_name1", "clip_name2", "clip_name3", 
         "unet_name", "control_net_name", "style_model_name", 
-        "clip_vision_name", "upscale_model_name", "embedding_name"
+        "clip_vision_name", "upscale_model_name", "embedding_name",
+        "diffusion_model_name", "text_encoder_name", 
+        "audio_checkpoint_name", "audio_model_name", "latent_upscale_model_name",
+        "model", "vae", "clip", "text_encoder"
     ];
-    return TARGET_WIDGETS.includes(widgetName);
+    if (EXACT_MATCH.includes(name)) return true;
+
+    if (name.startsWith("clip_name")) return true;
+    if (name.includes("text_encoder")) return true;
+    if (name.includes("unet") && name.includes("name")) return true;
+
+    return false;
 }
