@@ -17,7 +17,6 @@ export async function showResultDialog(uiInstance, conflicts, downloads, unknown
     
     dialog.innerHTML = `
         <div class="fixer-notice-top">关闭页面，不影响后台模型下载！</div>
-
         <h3>${title}</h3>
         <div class="fixer-dialog-content" id="fixer-list"></div>
         <div class="fixer-dialog-footer">
@@ -28,7 +27,6 @@ export async function showResultDialog(uiInstance, conflicts, downloads, unknown
 
     const listContainer = dialog.querySelector("#fixer-list");
 
-    // 1. Unknowns
     if (unknowns.length > 0) {
         const unTitle = document.createElement("div");
         unTitle.className = "fixer-section-title";
@@ -42,7 +40,6 @@ export async function showResultDialog(uiInstance, conflicts, downloads, unknown
         });
     }
 
-    // 2. Downloads (含中断逻辑 & 复制按钮)
     if (downloads.length > 0) {
         const dlTitle = document.createElement("div");
         dlTitle.className = "fixer-section-title";
@@ -64,7 +61,7 @@ export async function showResultDialog(uiInstance, conflicts, downloads, unknown
             
             const btnGroup = div.querySelector(".fixer-btn-group");
             
-            // --- A. 下载/中断按钮 ---
+            // 下载/中断按钮
             const dlBtn = document.createElement("button");
             dlBtn.className = "fixer-download-btn";
             dlBtn.id = `btn-dl-${safeName}`;
@@ -87,7 +84,6 @@ export async function showResultDialog(uiInstance, conflicts, downloads, unknown
                     e.preventDefault();
                     dlBtn.disabled = true;
                     dlBtn.textContent = "🚀 请求中...";
-                    
                     const res = await downloadModelFromServer(item.download_url, justFileName, item.model_type);
                     if (res.success) {
                         if (res.status === "exists") {
@@ -110,22 +106,20 @@ export async function showResultDialog(uiInstance, conflicts, downloads, unknown
                 };
             }
             
-            // --- B. [新增] 复制链接按钮 ---
+            // 复制链接按钮
             const copyBtn = document.createElement("button");
             copyBtn.className = "fixer-copy-btn";
             copyBtn.textContent = "📋 复制链接";
-            copyBtn.title = item.download_url; // 鼠标悬停显示完整链接
+            copyBtn.title = item.download_url;
             
             copyBtn.onclick = async (e) => {
                 e.preventDefault();
                 try {
                     await navigator.clipboard.writeText(item.download_url);
-                    // 视觉反馈
                     const originalText = "📋 复制链接";
                     copyBtn.textContent = "✅ 已复制";
                     copyBtn.style.background = "#2a7a3b";
                     copyBtn.style.borderColor = "#2a7a3b";
-                    
                     setTimeout(() => {
                         copyBtn.textContent = originalText;
                         copyBtn.style.background = "#444";
@@ -137,13 +131,11 @@ export async function showResultDialog(uiInstance, conflicts, downloads, unknown
             };
 
             btnGroup.appendChild(dlBtn);
-            btnGroup.appendChild(copyBtn); // 添加到按钮组
-            
+            btnGroup.appendChild(copyBtn);
             listContainer.appendChild(div);
         });
     }
 
-    // 3. Conflicts
     if (conflicts.length > 0) {
         const cfTitle = document.createElement("div");
         cfTitle.className = "fixer-section-title";
