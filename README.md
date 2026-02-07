@@ -1,6 +1,9 @@
 # 🔧 ComfyUI Any Path Repair
 **ComfyUI任意模型路径修复工具** | **智能模型路径修复引擎**
+
 告别"红框"报错，一键修复 ComfyUI 模型加载器路径错误。
+
+[ComfyUI-Any-Path-Repair主题曲.mp3](https://github.com/user-attachments/files/25153935/ComfyUI-Any-Path-Repair.mp3)
 
 ---
 
