@@ -1,12 +1,7 @@
 import { api } from "../../../scripts/api.js";
 
-export function error(...args) {
-    console.error("[Path-Fixer]", ...args);
-}
-
-export function log(...args) {
-    console.log("[Path-Fixer]", ...args);
-}
+export function error(...args) { console.error("[Path-Fixer]", ...args); }
+export function log(...args) { console.log("[Path-Fixer]", ...args); }
 
 export async function fetchFixPaths(queries, dynamicLinks = {}) {
     try {
@@ -29,48 +24,35 @@ export async function fetchActiveDownloads() {
         if (!response.ok) return [];
         const data = await response.json();
         return data.active || [];
-    } catch (e) {
-        return [];
-    }
+    } catch (e) { return []; }
 }
 
 export async function downloadModelFromServer(url, filename, modelType) {
     try {
         const response = await api.fetchApi("/model_path_fixer/download", {
             method: "POST",
-            body: JSON.stringify({
-                url: url,
-                model_type: modelType,
-                source: "HF Mirror" 
-            }),
+            body: JSON.stringify({ url, model_type: modelType, source: "HF Mirror" }),
             headers: { "Content-Type": "application/json" }
         });
-
         if (!response.ok) throw new Error(`Network Error: ${response.status}`);
         return await response.json(); 
-    } catch (e) {
-        return { success: false, message: e.message };
-    }
+    } catch (e) { return { success: false, message: e.message }; }
 }
 
-// [新增] 中断下载
 export async function cancelDownloadFromServer(filename) {
     try {
         const response = await api.fetchApi("/model_path_fixer/cancel", {
             method: "POST",
-            body: JSON.stringify({ filename: filename }),
+            body: JSON.stringify({ filename }),
             headers: { "Content-Type": "application/json" }
         });
         return await response.json();
-    } catch (e) {
-        return { success: false, message: e.message };
-    }
+    } catch (e) { return { success: false, message: e.message }; }
 }
 
 export function isModelWidget(widgetName) {
     if (!widgetName) return false;
     const name = widgetName.toLowerCase();
-    
     const EXACT_MATCH = [
         "ckpt_name", "vae_name", "lora_name", "clip_name", 
         "clip_name1", "clip_name2", "clip_name3", 
@@ -81,10 +63,8 @@ export function isModelWidget(widgetName) {
         "model", "vae", "clip", "text_encoder"
     ];
     if (EXACT_MATCH.includes(name)) return true;
-
     if (name.startsWith("clip_name")) return true;
     if (name.includes("text_encoder")) return true;
     if (name.includes("unet") && name.includes("name")) return true;
-
     return false;
 }

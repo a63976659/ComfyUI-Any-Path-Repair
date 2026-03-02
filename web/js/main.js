@@ -1,13 +1,8 @@
 import { app } from "../../../scripts/app.js";
-import { error, log, isModelWidget, fetchFixPaths, fetchActiveDownloads } from "./utils.js";
+import { error, isModelWidget, fetchFixPaths, fetchActiveDownloads } from "./utils.js";
 import { FixerUI } from "./ui.js";
 
-// [核心] 全局缓存，用于在重新打开 UI 时恢复上一次的扫描结果
-let cachedScanResult = {
-    conflicts: [],
-    downloads: [],
-    unknowns: []
-};
+let cachedScanResult = { conflicts: [], downloads: [], unknowns: [] };
 
 function extractLinksFromWorkflow(graph) {
     const dynamicLinks = {}; 
@@ -52,38 +47,19 @@ function extractLinksFromWorkflow(graph) {
 async function executePathFix(uiInstance) {
     const graph = app.graph;
     
-    // ============================================
-    // [核心需求] 1. 先检查后台是否有下载任务
-    // ============================================
+    // 优先恢复状态
     const activeDownloads = await fetchActiveDownloads();
     if (activeDownloads.length > 0) {
-        // 如果有正在下载的任务，且我们有缓存，直接恢复 UI
-        // 这样点击“修复”按钮变成了“查看状态”功能
-        console.log("[PathFixer] 检测到后台任务，恢复 UI 界面");
-        uiInstance.setButtonState(true, "查看状态..."); // 瞬间状态
-        
-        // 恢复上次的数据，这样用户能看到那个下载按钮
-        // 如果没有缓存（比如刷新过页面），可能需要重新扫描，但为了安全我们只显示状态
-        uiInstance.showResultDialog(
-            cachedScanResult.conflicts, 
-            cachedScanResult.downloads, 
-            cachedScanResult.unknowns, 
-            (map) => applyFixes(graph, map) // 保持 callback
-        );
-        uiInstance.setButtonState(false); // 恢复按钮可点
+        uiInstance.setButtonState(true, "恢复状态...");
+        uiInstance.showResultDialog(cachedScanResult.conflicts, cachedScanResult.downloads, cachedScanResult.unknowns, (map) => applyFixes(graph, map));
+        uiInstance.setButtonState(false);
         return;
     }
-
-    // ============================================
-    // 2. 正常流程：没有下载任务，开始扫描
-    // ============================================
     
+    // 开始扫描
     const queries = [];
     uiInstance.setButtonState(true, "扫描中...");
-    
-    // 清空缓存
     cachedScanResult = { conflicts: [], downloads: [], unknowns: [] };
-
     const dynamicLinks = extractLinksFromWorkflow(graph);
     
     try {
@@ -92,10 +68,7 @@ async function executePathFix(uiInstance) {
             for (const widget of node.widgets) {
                 if (isModelWidget(widget.name) && typeof widget.value === "string") {
                     queries.push({
-                        id: node.id,
-                        widget_name: widget.name,
-                        current_val: widget.value,
-                        type: widget.name
+                        id: node.id, widget_name: widget.name, current_val: widget.value, type: widget.name
                     });
                 }
             }
@@ -112,7 +85,7 @@ async function executePathFix(uiInstance) {
         const results = data.fixed || [];
 
         if (results.length === 0) {
-            alert("✅ 所有模型路径均正确，无需修复。");
+            alert("✅ 所有模型路径均正确。");
             uiInstance.setButtonState(false);
             return;
         }
@@ -124,11 +97,8 @@ async function executePathFix(uiInstance) {
 
         results.forEach(res => {
             if (res.candidates.length === 0) {
-                if (res.download_url) {
-                    downloads.push(res);
-                } else {
-                    unknowns.push(res);
-                }
+                if (res.download_url) downloads.push(res);
+                else unknowns.push(res);
             } else if (res.candidates.length === 1) {
                 autoFixes.push({ id: res.id, widget_name: res.widget_name, new_value: res.candidates[0], old_value: res.old_value });
             } else {
@@ -136,7 +106,6 @@ async function executePathFix(uiInstance) {
             }
         });
 
-        // 更新缓存
         cachedScanResult = { conflicts, downloads, unknowns };
 
         let fixedCount = 0;
@@ -165,7 +134,7 @@ async function executePathFix(uiInstance) {
         }
 
     } catch (e) {
-        error("执行修复流程出错:", e);
+        error("执行修复出错:", e);
         uiInstance.setButtonState(false);
     }
 }
@@ -212,8 +181,6 @@ app.registerExtension({
     name: "ComfyUI.ModelPathFixer",
     async setup(app) {
         const ui = new FixerUI(executePathFix);
-        setTimeout(() => {
-            ui.addPanelButtons(app);
-        }, 500);
+        setTimeout(() => ui.addPanelButtons(app), 500);
     }
 });
