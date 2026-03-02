@@ -1,6 +1,7 @@
 import os
 import folder_paths
 from aiohttp import web
+from urllib.parse import unquote
 from .core_utils import normalize_path, load_local_links
 from .config import get_type_mapping
 
@@ -26,14 +27,13 @@ async def handle_fix_request(request):
         results = []
         type_mapping = get_type_mapping()
         
-        # 预构建索引
         relevant_types = set()
         for item in query_list:
             w_type = item.get("type")
             std_type = type_mapping.get(w_type)
             if std_type: relevant_types.add(std_type)
             else:
-                relevant_types.update(["checkpoints", "loras", "clip", "unet", "vae", "diffusion_models"])
+                relevant_types.update(["checkpoints", "loras", "clip", "unet", "vae", "diffusion_models", "text_encoders"])
         
         file_index = build_file_index(list(relevant_types))
         
@@ -44,22 +44,15 @@ async def handle_fix_request(request):
             widget_type = item.get("type")
             standard_type = type_mapping.get(widget_type)
             
-            # [核心优化 1] 路径前缀优先原则
-            # 如果当前值包含路径 (例如 "diffusion_models/model.pt")，尝试从中提取类型
-            # 这能解决组件是 unet_name 但实际路径在 diffusion_models 的问题
+            # 路径前缀分析
             norm_val = normalize_path(current_val)
             if "/" in norm_val:
-                parts = norm_val.split("/")
-                potential_folder = parts[0].lower() # 取第一层文件夹
-                
-                # 检查这个文件夹是否是有效的 ComfyUI 模型目录
-                # 我们遍历所有已知的文件夹类型来匹配
+                potential_folder = norm_val.split("/")[0].lower()
                 for known_type in folder_paths.folder_names_and_paths:
                     if known_type.lower() == potential_folder:
                         standard_type = known_type
                         break
 
-            # 模糊匹配兜底
             if not standard_type:
                 w_lower = widget_type.lower()
                 if "clip" in w_lower or "text_encoder" in w_lower: standard_type = "clip"
@@ -69,19 +62,23 @@ async def handle_fix_request(request):
             
             target_basename = os.path.basename(norm_val).lower()
             
-            # 1. 查找本地文件
+            # 本地搜索
             candidates = []
             if target_basename in file_index:
                 same_type = [x["full_path"] for x in file_index[target_basename] if x["model_type"] == standard_type]
-                other_type = [x["full_path"] for x in file_index[target_basename] if x["model_type"] != standard_type]
-                candidates = same_type if same_type else other_type
+                diff_type = [x["full_path"] for x in file_index[target_basename] if x["model_type"] == "diffusion_models"]
+                other_type = [x["full_path"] for x in file_index[target_basename] if x["model_type"] != standard_type and x["model_type"] != "diffusion_models"]
+                
+                if same_type: candidates = same_type
+                elif diff_type: candidates = diff_type
+                else: candidates = other_type
 
-            # 2. 检查是否已存在
+            # 校验存在性
             norm_current = norm_val.lower()
             norm_candidates = [normalize_path(c).lower() for c in candidates]
             if norm_current in norm_candidates: continue 
 
-            # 3. 查找下载链接
+            # 获取下载链接
             download_link = None
             final_download_type = standard_type if standard_type else "uncategorized"
             
@@ -103,6 +100,16 @@ async def handle_fix_request(request):
                         if db_file.lower() == target_basename:
                             download_link = db_url
                             break
+
+            # URL 类型嗅探
+            if download_link:
+                url_decoded = unquote(download_link).lower()
+                if "diffusion_models" in url_decoded: final_download_type = "diffusion_models"
+                elif "text_encoders" in url_decoded: final_download_type = "text_encoders"
+                elif "/vae/" in url_decoded or "/vae." in url_decoded: final_download_type = "vae"
+                elif "lora" in url_decoded: final_download_type = "loras"
+                elif "/unet/" in url_decoded: final_download_type = "unet"
+                elif "/clip/" in url_decoded: final_download_type = "clip"
 
             if candidates or download_link:
                 results.append({

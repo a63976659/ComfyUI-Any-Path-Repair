@@ -1,10 +1,12 @@
 import server
 from .config import register_custom_paths
-from .downloader import handle_download_request, handle_get_active_tasks, handle_cancel_request # 引入 handle_cancel_request
+from .downloader import handle_download_request, handle_get_active_tasks, handle_cancel_request
 from .search import handle_fix_request
 
+# 初始化路径映射
 register_custom_paths()
 
+# 注册 API 路由
 @server.PromptServer.instance.routes.post("/model_path_fixer/fix")
 async def route_fix(request):
     return await handle_fix_request(request)
@@ -13,7 +15,6 @@ async def route_fix(request):
 async def route_download(request):
     return await handle_download_request(request)
 
-# [新增] 中断路由
 @server.PromptServer.instance.routes.post("/model_path_fixer/cancel")
 async def route_cancel(request):
     return await handle_cancel_request(request)
@@ -25,4 +26,5 @@ async def route_active(request):
 NODE_CLASS_MAPPINGS = {}
 NODE_DISPLAY_NAME_MAPPINGS = {}
 WEB_DIRECTORY = "./web"
-print("🔧 Model Path Fixer: Loaded (Console Progress + Cancel Support).")
+
+print("🔧 Model Path Fixer: Loaded.")

@@ -18,34 +18,21 @@ def load_local_links():
     return {}
 
 def parse_hf_url(url):
-    """
-    解析 Hugging Face URL。
-    返回: (repo_id, path_in_repo)
-    注意：path_in_repo 可能包含子文件夹 (如 split_files/vae/model.pt)，
-    调用者(downloader)需要决定是否保留这些子文件夹。
-    """
     if "huggingface.co" not in url and "hf-mirror.com" not in url: return None, None
-    
     clean_url = url.replace("https://", "").replace("http://", "")
     parts = clean_url.split("/")
-    
     if len(parts) < 5: return None, None
-    
     try:
         repo_id = f"{parts[1]}/{parts[2]}"
         filename = ""
-        
-        # 提取 URL 中的文件路径部分
         if "resolve" in parts:
             idx = parts.index("resolve")
-            # idx+2 跳过了 branch (例如 main)
             filename = "/".join(parts[idx+2:])
         elif "blob" in parts:
             idx = parts.index("blob")
             filename = "/".join(parts[idx+2:])
         else:
             filename = parts[-1]
-            
         return repo_id, filename
     except:
         return None, os.path.basename(url)
