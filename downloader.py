@@ -149,7 +149,7 @@ async def handle_download_request(request):
 
         # 2. 物理路径锁定 (绕过 ComfyUI 注册表可能的误导)
         target_dir = None
-        STRICT_FOLDERS = ["diffusion_models", "text_encoders", "vae", "loras", "clip", "unet"]
+        STRICT_FOLDERS = ["diffusion_models", "text_encoders", "vae", "loras", "clip", "unet", "latent_upscale_models"]
         
         if model_type in STRICT_FOLDERS:
             direct_path = os.path.join(folder_paths.models_dir, model_type)

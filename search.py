@@ -111,11 +111,11 @@ async def handle_fix_request(request):
                 elif "/unet/" in url_decoded: final_download_type = "unet"
                 elif "/clip/" in url_decoded: final_download_type = "clip"
 
-            if candidates or download_link:
-                results.append({
-                    "id": item.get("id"), "widget_name": widget_type, "old_value": current_val,
-                    "candidates": candidates, "download_url": download_link, "model_type": final_download_type
-                })
+            # 无论是否有备选路径或下载链接，只要路径不正确或丢失，就无条件加入结果列表
+            results.append({
+                "id": item.get("id"), "widget_name": widget_type, "old_value": current_val,
+                "candidates": candidates, "download_url": download_link, "model_type": final_download_type
+            })
                 
         return web.json_response({"fixed": results})
     except Exception as e:

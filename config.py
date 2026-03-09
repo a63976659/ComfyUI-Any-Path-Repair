@@ -21,7 +21,9 @@ MANUAL_MAPPING = {
     "embedding_name": "embeddings",
     "audio_checkpoint_name": "audio_checkpoints",
     "audio_model_name": "audio_checkpoints",
-    "latent_upscale_model_name": "latent_upscale_models" 
+    "latent_upscale_model_name": "latent_upscale_models",
+    "model_name": "latent_upscale_models",
+    "模型名称": "latent_upscale_models"
 }
 
 def get_type_mapping():
