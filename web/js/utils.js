@@ -60,7 +60,7 @@ export function isModelWidget(widgetName) {
         "clip_vision_name", "upscale_model_name", "embedding_name",
         "diffusion_model_name", "text_encoder_name", 
         "audio_checkpoint_name", "audio_model_name", "latent_upscale_model_name",
-        "model", "vae", "clip", "text_encoder"
+        "model", "vae", "clip", "text_encoder", "model_name", "模型名称"
     ];
     if (EXACT_MATCH.includes(name)) return true;
     if (name.startsWith("clip_name")) return true;
