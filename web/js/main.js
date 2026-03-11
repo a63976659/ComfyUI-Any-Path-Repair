@@ -66,13 +66,14 @@ async function executePathFix(uiInstance) {
         for (const node of graph._nodes) {
             if (!node.widgets) continue;
             for (const widget of node.widgets) {
-                if (isModelWidget(widget.name) && typeof widget.value === "string") {
+                // 核心修复：这里将 node.type 也传入函数进行交叉验证
+                if (isModelWidget(widget.name, node.type) && typeof widget.value === "string") {
                     queries.push({
                         id: node.id, 
                         widget_name: widget.name, 
                         current_val: widget.value, 
                         type: widget.name,
-                        node_type: node.type // <--- 新增：提取并传递节点类型
+                        node_type: node.type
                     });
                 }
             }

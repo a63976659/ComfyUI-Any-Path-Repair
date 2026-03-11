@@ -50,9 +50,21 @@ export async function cancelDownloadFromServer(filename) {
     } catch (e) { return { success: false, message: e.message }; }
 }
 
-export function isModelWidget(widgetName) {
+// 新增 nodeType 参数用于交叉验证
+export function isModelWidget(widgetName, nodeType = "") {
     if (!widgetName) return false;
     const name = widgetName.toLowerCase();
+    const nType = nodeType.toLowerCase();
+    
+    // --- 核心修复：防误判机制 ---
+    // 如果挂件名是非常泛用的词汇（如 model, 模型, vae, clip），
+    // 那么必须要求这个节点的英文名字里包含加载器的特征词（load, provider 等），否则直接跳过扫描！
+    const genericNames = ["model", "模型", "vae", "clip", "text_encoder"];
+    if (genericNames.includes(name)) {
+        if (!nType.includes("load") && !nType.includes("provider") && !nType.includes("dino") && !nType.includes("sam")) {
+            return false; 
+        }
+    }
     
     const EXACT_MATCH = [
         // --- 基础挂件名 ---
@@ -64,11 +76,11 @@ export function isModelWidget(widgetName) {
         "audio_checkpoint_name", "audio_model_name", "latent_upscale_model_name",
         "model", "vae", "clip", "text_encoder", "model_name", "模型名称",
         
-        // --- 新增：保留下来的特殊英文挂件名 ---
+        // --- 保留下来的特殊英文挂件名 ---
         "gligen_name", "hypernetwork_name", "audio_encoder_name", "photomaker_model_name",
         "embedding", "control_net_override",
         
-        // --- 新增：保留下来的中文翻译挂件名 ---
+        // --- 保留下来的中文翻译挂件名 ---
         "controlnet名称", "风格模型名称", "clip名称", "checkpoint名称", 
         "gligen名称", "放大模型名称", "超网络名称", "音频编码器名称", 
         "照片制作 模型", "embedding嵌入", "control net名称", "control net覆盖", "lora名称"
