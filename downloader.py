@@ -147,9 +147,14 @@ async def handle_download_request(request):
         
         if not model_type: return web.json_response({"success": False, "message": "无法识别模型类型"})
 
-        # 2. 物理路径锁定 (绕过 ComfyUI 注册表可能的误导)
+        # 2. 物理路径锁定 (已移除 blip, pulid, instantid)
         target_dir = None
-        STRICT_FOLDERS = ["diffusion_models", "text_encoders", "vae", "loras", "clip", "unet", "latent_upscale_models"]
+        STRICT_FOLDERS = [
+            "diffusion_models", "text_encoders", "vae", "loras", "clip", 
+            "unet", "latent_upscale_models", "ultralytics", "gligen",
+            "hypernetworks", "photomaker", "sams", "grounding-dino", 
+            "animatediff_models", "upscale_models"
+        ]
         
         if model_type in STRICT_FOLDERS:
             direct_path = os.path.join(folder_paths.models_dir, model_type)

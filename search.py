@@ -3,7 +3,7 @@ import folder_paths
 from aiohttp import web
 from urllib.parse import unquote
 from .core_utils import normalize_path, load_local_links
-from .config import get_type_mapping
+from .config import get_type_mapping, NODE_SPECIFIC_MAPPING
 
 def build_file_index(model_types):
     index = {}
@@ -27,26 +27,24 @@ async def handle_fix_request(request):
         results = []
         type_mapping = get_type_mapping()
         
-        relevant_types = set()
-        for item in query_list:
-            w_type = item.get("type")
-            std_type = type_mapping.get(w_type)
-            if std_type: relevant_types.add(std_type)
-            else:
-                relevant_types.update(["checkpoints", "loras", "clip", "unet", "vae", "diffusion_models", "text_encoders"])
-        
-        file_index = build_file_index(list(relevant_types))
+        all_types = list(folder_paths.folder_names_and_paths.keys())
+        file_index = build_file_index(all_types)
         
         for item in query_list:
             current_val = item.get("current_val")
             if not current_val: continue
             
             widget_type = item.get("type")
-            standard_type = type_mapping.get(widget_type)
+            node_type = item.get("node_type")
             
-            # 路径前缀分析
+            # 优先检查节点级映射
+            standard_type = NODE_SPECIFIC_MAPPING.get(node_type)
+            if not standard_type:
+                standard_type = type_mapping.get(widget_type)
+            
+            # 路径前缀分析 (核心修复：只在没有明确 standard_type 时触发，防止误覆盖正确映射)
             norm_val = normalize_path(current_val)
-            if "/" in norm_val:
+            if not standard_type and "/" in norm_val:
                 potential_folder = norm_val.split("/")[0].lower()
                 for known_type in folder_paths.folder_names_and_paths:
                     if known_type.lower() == potential_folder:
@@ -95,11 +93,25 @@ async def handle_fix_request(request):
                                 break
                         if download_link: break
                 
-                if not download_link and standard_type in local_links_db:
-                    for db_file, db_url in local_links_db[standard_type].items():
-                        if db_file.lower() == target_basename:
-                            download_link = db_url
-                            break
+                # 核心修复：更强大的本地 JSON 库匹配逻辑
+                if not download_link and local_links_db:
+                    # 优先在推测出的分类中寻找
+                    if standard_type in local_links_db:
+                        for db_file, db_url in local_links_db[standard_type].items():
+                            if isinstance(db_url, str) and db_file.lower() == target_basename:
+                                download_link = db_url
+                                break
+                    
+                    # 兜底：如果没有找到，全局遍历 model_links.json 中所有分类
+                    if not download_link:
+                        for cat, files in local_links_db.items():
+                            if isinstance(files, dict):
+                                for db_file, db_url in files.items():
+                                    if isinstance(db_url, str) and db_file.lower() == target_basename:
+                                        download_link = db_url
+                                        final_download_type = cat # 修正为库中实际定义的分类
+                                        break
+                            if download_link: break
 
             # URL 类型嗅探
             if download_link:
@@ -110,6 +122,12 @@ async def handle_fix_request(request):
                 elif "lora" in url_decoded: final_download_type = "loras"
                 elif "/unet/" in url_decoded: final_download_type = "unet"
                 elif "/clip/" in url_decoded: final_download_type = "clip"
+
+                # 福利：完美还原原有的子文件夹结构（如 bbox, segm），直接通知下载器连带子目录一起创建
+                if "/" in norm_val:
+                    sub_folder = os.path.dirname(norm_val)
+                    if sub_folder and sub_folder not in final_download_type:
+                        final_download_type = f"{final_download_type}/{sub_folder}"
 
             # 无论是否有备选路径或下载链接，只要路径不正确或丢失，就无条件加入结果列表
             results.append({

@@ -7,23 +7,45 @@ MANUAL_MAPPING = {
     "vae_name": "vae",
     "lora_name": "loras",
     "unet_name": "unet",
-    "diffusion_model_name": "diffusion_models", # 精确映射
+    "diffusion_model_name": "diffusion_models", 
     "clip_name": "clip",
     "clip_name1": "clip", 
     "clip_name2": "clip",
     "clip_name3": "clip",
-    "text_encoder_name": "text_encoders",       # 精确映射
+    "text_encoder_name": "text_encoders",       
     "text_encoder": "text_encoders",
     "control_net_name": "controlnet",
+    "control_net_override": "controlnet",
     "style_model_name": "style_models",
     "clip_vision_name": "clip_vision",
     "upscale_model_name": "upscale_models",
     "embedding_name": "embeddings",
+    "embedding": "embeddings",
     "audio_checkpoint_name": "audio_checkpoints",
     "audio_model_name": "audio_checkpoints",
+    "audio_encoder_name": "audio_checkpoints",
     "latent_upscale_model_name": "latent_upscale_models",
-    "model_name": "latent_upscale_models",
-    "模型名称": "latent_upscale_models"
+    
+    # 保留的通用挂件映射
+    "gligen_name": "gligen",
+    "hypernetwork_name": "hypernetworks",
+    "resadapter_path": "checkpoints",
+    "photomaker_model_name": "photomaker"
+}
+
+# 基于节点类型的精确映射（解决泛用挂件名如 model_name, ckpt_name 的冲突问题）
+NODE_SPECIFIC_MAPPING = {
+    "LatentUpscaleModelLoader": "latent_upscale_models",
+    "UltralyticsDetectorProvider": "ultralytics",
+    
+    # 保留的节点专属映射
+    "UpscaleModelLoader": "upscale_models",
+    "LTXVAudioVAELoader": "vae",
+    "LoadWanVideoT5TextEncoder": "text_encoders",
+    "Wav2VecModelLoader": "audio_checkpoints",
+    "GroundingDinoModelLoader_SDPose": "grounding-dino",
+    "AnimateDiffModuleLoader": "animatediff_models",
+    "SAMLoader": "sams"
 }
 
 def get_type_mapping():
