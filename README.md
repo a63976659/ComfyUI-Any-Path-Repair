@@ -5,6 +5,7 @@
 
 [ComfyUI-Any-Path-Repair主题曲.mp3](https://github.com/user-attachments/files/25153935/ComfyUI-Any-Path-Repair.mp3)
 
+# [![Bilibili](https://img.shields.io/badge/bilibili-猪的飞行梦-00A1D6?logo=bilibili&logoColor=white)](https://space.bilibili.com/2114638644)
 ---
 
 ## ✨ 核心亮点 (Highlights)
@@ -159,6 +160,10 @@
 
 ## 📊 更新日志 (Changelog)
 
+### **2026-03-11** `v1.5.0`
+1. 增加更多种类模型加载器检测，一键修复路径。
+2. 优化下载地址匹配方式，确保有地址的模型能够正确下载。
+   
 ### **2026-03-09** `v1.4.0`
 1. 修复`Latent放大模型加载器`模型路径检测失败的问题。
 2. 优化模型缺少时，且没有下载路径的提醒。
@@ -335,6 +340,7 @@ git clone https://github.com/a63976659/ComfyUI-Any-Path-Repair.git
 **作者**：a63976659  
 - [小红书：猪的飞行梦] 
 - [哔哩哔哩主页：https://space.bilibili.com/2114638644]
+- [![Bilibili](https://img.shields.io/badge/bilibili-猪的飞行梦-00A1D6?logo=bilibili&logoColor=white)](https://space.bilibili.com/2114638644)
 
 **致谢**：感谢所有测试用户和贡献者！
 如果你觉得插件还不错可以点个收藏。
