@@ -68,7 +68,11 @@ async function executePathFix(uiInstance) {
             for (const widget of node.widgets) {
                 if (isModelWidget(widget.name) && typeof widget.value === "string") {
                     queries.push({
-                        id: node.id, widget_name: widget.name, current_val: widget.value, type: widget.name
+                        id: node.id, 
+                        widget_name: widget.name, 
+                        current_val: widget.value, 
+                        type: widget.name,
+                        node_type: node.type // <--- 新增：提取并传递节点类型
                     });
                 }
             }
