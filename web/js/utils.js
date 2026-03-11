@@ -53,15 +53,27 @@ export async function cancelDownloadFromServer(filename) {
 export function isModelWidget(widgetName) {
     if (!widgetName) return false;
     const name = widgetName.toLowerCase();
+    
     const EXACT_MATCH = [
+        // --- 基础挂件名 ---
         "ckpt_name", "vae_name", "lora_name", "clip_name", 
         "clip_name1", "clip_name2", "clip_name3", 
         "unet_name", "control_net_name", "style_model_name", 
         "clip_vision_name", "upscale_model_name", "embedding_name",
         "diffusion_model_name", "text_encoder_name", 
         "audio_checkpoint_name", "audio_model_name", "latent_upscale_model_name",
-        "model", "vae", "clip", "text_encoder", "model_name", "模型名称"
+        "model", "vae", "clip", "text_encoder", "model_name", "模型名称",
+        
+        // --- 新增：保留下来的特殊英文挂件名 ---
+        "gligen_name", "hypernetwork_name", "audio_encoder_name", "photomaker_model_name",
+        "embedding", "control_net_override",
+        
+        // --- 新增：保留下来的中文翻译挂件名 ---
+        "controlnet名称", "风格模型名称", "clip名称", "checkpoint名称", 
+        "gligen名称", "放大模型名称", "超网络名称", "音频编码器名称", 
+        "照片制作 模型", "embedding嵌入", "control net名称", "control net覆盖", "lora名称"
     ];
+    
     if (EXACT_MATCH.includes(name)) return true;
     if (name.startsWith("clip_name")) return true;
     if (name.includes("text_encoder")) return true;
