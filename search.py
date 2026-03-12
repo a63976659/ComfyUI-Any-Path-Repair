@@ -7,9 +7,18 @@ from .config import get_type_mapping, NODE_SPECIFIC_MAPPING
 
 def build_file_index(model_types):
     index = {}
-    for m_type in model_types:
+    # 【修复2】去重 model_types，防止注册表和手动追加重复扫描
+    for m_type in set(model_types):
         try:
-            files = folder_paths.get_filename_list(m_type)
+            files = []
+            if m_type in ["LLM", "TTS"]:
+                target_dir = os.path.join(folder_paths.models_dir, m_type)
+                if os.path.exists(target_dir):
+                    # 【修复1】只取文件夹名 (d)，不要拼凑带盘符的绝对路径
+                    files = [d for d in os.listdir(target_dir) if os.path.isdir(os.path.join(target_dir, d))]
+            else:
+                files = folder_paths.get_filename_list(m_type)
+                
             for f in files:
                 base_name = os.path.basename(normalize_path(f)).lower()
                 if base_name not in index: index[base_name] = []
@@ -27,7 +36,8 @@ async def handle_fix_request(request):
         results = []
         type_mapping = get_type_mapping()
         
-        all_types = list(folder_paths.folder_names_and_paths.keys())
+        # 再次确保大类列表不会有重复项
+        all_types = list(set(list(folder_paths.folder_names_and_paths.keys()) + ["LLM", "TTS"]))
         file_index = build_file_index(all_types)
         
         for item in query_list:
@@ -42,7 +52,7 @@ async def handle_fix_request(request):
             if not standard_type:
                 standard_type = type_mapping.get(widget_type)
             
-            # 路径前缀分析 (核心修复：只在没有明确 standard_type 时触发，防止误覆盖正确映射)
+            # 路径前缀分析
             norm_val = normalize_path(current_val)
             if not standard_type and "/" in norm_val:
                 potential_folder = norm_val.split("/")[0].lower()
@@ -71,6 +81,9 @@ async def handle_fix_request(request):
                 elif diff_type: candidates = diff_type
                 else: candidates = other_type
 
+            # 【修复3】为了极致的稳妥，对最终的候选名单进行一次强制去重
+            candidates = list(dict.fromkeys(candidates))
+
             # 校验存在性
             norm_current = norm_val.lower()
             norm_candidates = [normalize_path(c).lower() for c in candidates]
@@ -93,23 +106,19 @@ async def handle_fix_request(request):
                                 break
                         if download_link: break
                 
-                # 核心修复：更强大的本地 JSON 库匹配逻辑
                 if not download_link and local_links_db:
-                    # 优先在推测出的分类中寻找
                     if standard_type in local_links_db:
                         for db_file, db_url in local_links_db[standard_type].items():
                             if isinstance(db_url, str) and db_file.lower() == target_basename:
                                 download_link = db_url
                                 break
-                    
-                    # 兜底：如果没有找到，全局遍历 model_links.json 中所有分类
                     if not download_link:
                         for cat, files in local_links_db.items():
                             if isinstance(files, dict):
                                 for db_file, db_url in files.items():
                                     if isinstance(db_url, str) and db_file.lower() == target_basename:
                                         download_link = db_url
-                                        final_download_type = cat # 修正为库中实际定义的分类
+                                        final_download_type = cat 
                                         break
                             if download_link: break
 
@@ -123,13 +132,11 @@ async def handle_fix_request(request):
                 elif "/unet/" in url_decoded: final_download_type = "unet"
                 elif "/clip/" in url_decoded: final_download_type = "clip"
 
-                # 福利：完美还原原有的子文件夹结构（如 bbox, segm），直接通知下载器连带子目录一起创建
                 if "/" in norm_val:
                     sub_folder = os.path.dirname(norm_val)
                     if sub_folder and sub_folder not in final_download_type:
                         final_download_type = f"{final_download_type}/{sub_folder}"
 
-            # 无论是否有备选路径或下载链接，只要路径不正确或丢失，就无条件加入结果列表
             results.append({
                 "id": item.get("id"), "widget_name": widget_type, "old_value": current_val,
                 "candidates": candidates, "download_url": download_link, "model_type": final_download_type

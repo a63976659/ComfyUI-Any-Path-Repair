@@ -25,27 +25,29 @@ MANUAL_MAPPING = {
     "audio_model_name": "audio_checkpoints",
     "audio_encoder_name": "audio_checkpoints",
     "latent_upscale_model_name": "latent_upscale_models",
-    
-    # 保留的通用挂件映射
     "gligen_name": "gligen",
     "hypernetwork_name": "hypernetworks",
-    "resadapter_path": "checkpoints",
     "photomaker_model_name": "photomaker"
 }
 
-# 基于节点类型的精确映射（解决泛用挂件名如 model_name, ckpt_name 的冲突问题）
+# 基于节点类型的精确映射
 NODE_SPECIFIC_MAPPING = {
     "LatentUpscaleModelLoader": "latent_upscale_models",
     "UltralyticsDetectorProvider": "ultralytics",
-    
-    # 保留的节点专属映射
     "UpscaleModelLoader": "upscale_models",
     "LTXVAudioVAELoader": "vae",
     "LoadWanVideoT5TextEncoder": "text_encoders",
     "Wav2VecModelLoader": "audio_checkpoints",
     "GroundingDinoModelLoader_SDPose": "grounding-dino",
     "AnimateDiffModuleLoader": "animatediff_models",
-    "SAMLoader": "sams"
+    "SAMLoader": "sams",
+    
+    # --- 新增：大语言模型与语音模型节点的专属映射 ---
+    "LLM_Chat_Node": "LLM",
+    "LLM_Translator_Node": "LLM",
+    "Qwen_TTS_Node": "TTS",
+    "Qwen_TTS_VoiceDesign_Node": "TTS",
+    "Qwen_TTS_VoiceClone_Node": "TTS"
 }
 
 def get_type_mapping():
