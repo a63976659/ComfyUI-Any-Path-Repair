@@ -35,7 +35,16 @@ export async function showResultDialog(uiInstance, conflicts, downloads, unknown
         unknowns.forEach(item => {
             const div = document.createElement("div");
             div.className = "fixer-download-box";
-            div.innerHTML = `<span class="fixer-download-title" style="color:#aaa">❓ ${item.old_value}</span><div style="font-size:12px; color:#666;">请手动下载</div>`;
+            
+            // 【核心增强】：针对 undefined 的友好拦截提示
+            let displayVal = item.old_value;
+            let subText = "请手动下载";
+            if (displayVal === "undefined") {
+                displayVal = "未选择模型 (undefined)";
+                subText = "节点中未选中任何模型，或者本地模型文件夹为空。";
+            }
+            
+            div.innerHTML = `<span class="fixer-download-title" style="color:#aaa">❓ ${displayVal}</span><div style="font-size:12px; color:#666;">${subText}</div>`;
             listContainer.appendChild(div);
         });
     }
