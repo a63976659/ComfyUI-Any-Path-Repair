@@ -50,6 +50,11 @@ export async function cancelDownloadFromServer(filename) {
     } catch (e) { return { success: false, message: e.message }; }
 }
 
+// 检测是否为子图节点（node.type 为 UUID）
+function isSubgraphNode(nodeType) {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(nodeType);
+}
+
 // 加入 nodeType 验证，防止普通的 "model" 组件误报，但放行 llm 和 tts
 export function isModelWidget(widgetName, nodeType = "") {
     if (!widgetName) return false;
@@ -59,7 +64,10 @@ export function isModelWidget(widgetName, nodeType = "") {
     // --- 防误判机制：放行包含 llm 和 tts 的节点 ---
     const genericNames = ["model", "模型", "vae", "clip", "text_encoder", "model_name", "模型名称"];
     if (genericNames.includes(name)) {
-        if (!nType.includes("load") && !nType.includes("provider") && !nType.includes("dino") && !nType.includes("sam") && !nType.includes("llm") && !nType.includes("tts")) {
+        // 子图节点（UUID类型）直接放行，提升的 widget 必然是模型相关的
+        if (isSubgraphNode(nodeType)) {
+            // 不拒绝，继续到下面的 EXACT_MATCH 检查
+        } else if (!nType.includes("load") && !nType.includes("provider") && !nType.includes("dino") && !nType.includes("sam") && !nType.includes("llm") && !nType.includes("tts")) {
             return false; 
         }
     }
@@ -76,12 +84,21 @@ export function isModelWidget(widgetName, nodeType = "") {
         "embedding", "control_net_override",
         "controlnet名称", "风格模型名称", "clip名称", "checkpoint名称", 
         "gligen名称", "放大模型名称", "超网络名称", "音频编码器名称", 
-        "照片制作 模型", "embedding嵌入", "control net名称", "control net覆盖", "lora名称"
+        "照片制作 模型", "embedding嵌入", "control net名称", "control net覆盖", "lora名称",
+        // 子图中文名称
+        "文本编码器", "unet名称", "模型"
     ];
     
     if (EXACT_MATCH.includes(name)) return true;
     if (name.startsWith("clip_name")) return true;
     if (name.includes("text_encoder")) return true;
     if (name.includes("unet") && name.includes("name")) return true;
+    
+    // 子图后缀支持：unet_name_1, lora_name_1, clip_name_2 等
+    if (/^(.+)_\d+$/.test(name)) {
+        const baseName = name.replace(/_\d+$/, '');
+        if (EXACT_MATCH.includes(baseName)) return true;
+    }
+    
     return false;
 }

@@ -1,4 +1,5 @@
 import os
+import re
 import folder_paths
 from aiohttp import web
 from urllib.parse import unquote
@@ -52,6 +53,12 @@ async def handle_fix_request(request):
             if not standard_type:
                 standard_type = type_mapping.get(widget_type)
             
+            # 子图后缀处理：unet_name_1 → unet_name
+            if not standard_type:
+                base_widget = re.sub(r'_\d+$', '', widget_type)
+                if base_widget != widget_type:
+                    standard_type = type_mapping.get(base_widget)
+            
             # 路径前缀分析
             norm_val = normalize_path(current_val)
             if not standard_type and "/" in norm_val:
@@ -67,6 +74,13 @@ async def handle_fix_request(request):
                 elif "unet" in w_lower or "diffusion" in w_lower: standard_type = "unet"
                 elif "lora" in w_lower: standard_type = "loras"
                 elif "checkpoint" in w_lower: standard_type = "checkpoints"
+                # 子图中文名称启发式匹配
+                elif "文本编码器" in widget_type: standard_type = "clip"
+                elif widget_type == "模型": standard_type = "latent_upscale_models"
+                elif widget_type == "model_name" or re.match(r'^model_name_\d+$', widget_type): standard_type = "latent_upscale_models"
+                elif "unet名称" in widget_type.lower(): standard_type = "unet"
+                elif "lora名称" in widget_type.lower(): standard_type = "loras"
+                elif "checkpoint名称" in widget_type.lower(): standard_type = "checkpoints"
             
             target_basename = os.path.basename(norm_val).lower()
             

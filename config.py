@@ -13,7 +13,7 @@ MANUAL_MAPPING = {
     "clip_name2": "clip",
     "clip_name3": "clip",
     "text_encoder_name": "text_encoders",       
-    "text_encoder": "text_encoders",
+    "text_encoder": "clip",
     "control_net_name": "controlnet",
     "control_net_override": "controlnet",
     "style_model_name": "style_models",
@@ -25,9 +25,16 @@ MANUAL_MAPPING = {
     "audio_model_name": "audio_checkpoints",
     "audio_encoder_name": "audio_checkpoints",
     "latent_upscale_model_name": "latent_upscale_models",
+    "model_name": "latent_upscale_models",
     "gligen_name": "gligen",
     "hypernetwork_name": "hypernetworks",
-    "photomaker_model_name": "photomaker"
+    "photomaker_model_name": "photomaker",
+    # 子图中文名称映射
+    "文本编码器": "clip",
+    "模型": "latent_upscale_models",
+    "UNet名称": "unet",
+    "LoRA名称": "loras",
+    "Checkpoint名称": "checkpoints"
 }
 
 # 基于节点类型的精确映射
