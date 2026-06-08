@@ -85,7 +85,9 @@
     "Cosmos-1_0-Diffusion-14B-Video2World.safetensors": "https://huggingface.co/mcmonkey/cosmos-1.0/resolve/main/Cosmos-1_0-Diffusion-14B-Video2World.safetensors",
     "iclight_sd15_fc.safetensors": "https://huggingface.co/lllyasviel/ic-light/resolve/main/iclight_sd15_fc.safetensors",
     "iclight_sd15_fbc.safetensors": "https://huggingface.co/lllyasviel/ic-light/resolve/main/iclight_sd15_fbc.safetensors",
-    "iclight_sd15_fcon.safetensors": "https://huggingface.co/lllyasviel/ic-light/resolve/main/iclight_sd15_fcon.safetensors"
+    "iclight_sd15_fcon.safetensors": "https://huggingface.co/lllyasviel/ic-light/resolve/main/iclight_sd15_fcon.safetensors",
+    "Wan21-OneToAllAnimation_fp8_e4m3fn_scaled_KJ.safetensors": "https://huggingface.co/Kijai/WanVideo_comfy_fp8_scaled/blob/main/OneToAllAnimation/Wan21-OneToAllAnimation_fp8_e4m3fn_scaled_KJ.safetensors",
+    "Wan21-OneToAllAnimation_fp16.safetensors": "https://huggingface.co/Kijai/WanVideo_comfy/blob/main/OneToAllAnimation/Wan21-OneToAllAnimation_fp16.safetensors"
   },
   "vae": {
     "__comment": "对应 vae",
