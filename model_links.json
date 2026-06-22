@@ -792,5 +792,21 @@
     "Qwen-Image-Edit-2509-Lightning-4steps-V1.0-fp32.safetensors": "https://huggingface.co/lightx2v/Qwen-Image-Lightning/resolve/main/Qwen-Image-Edit-2509/Qwen-Image-Edit-2509-Lightning-4steps-V1.0-fp32.safetensors",
     "Qwen-Image-Edit-2509-Lightning-8steps-V1.0-bf16.safetensors": "https://huggingface.co/lightx2v/Qwen-Image-Lightning/resolve/main/Qwen-Image-Edit-2509/Qwen-Image-Edit-2509-Lightning-8steps-V1.0-bf16.safetensors",
     "Qwen-Image-Edit-2509-Lightning-8steps-V1.0-fp32.safetensors": "https://huggingface.co/lightx2v/Qwen-Image-Lightning/resolve/main/Qwen-Image-Edit-2509/Qwen-Image-Edit-2509-Lightning-8steps-V1.0-fp32.safetensors"
+  },
+  "geometry_estimation": {
+    "__MoGe": "对应 geometry_estimation",
+    "folder_name": "geometry_estimation",
+    "moge_1_vitl_fp16.safetensors": "https://huggingface.co/Comfy-Org/MoGe/resolve/main/geometry_estimation/moge_1_vitl_fp16.safetensors",
+    "moge_2_vitl_normal_fp16.safetensors": "https://huggingface.co/Comfy-Org/MoGe/resolve/main/geometry_estimation/moge_2_vitl_normal_fp16.safetensors"
+  },
+  "background_removal": {
+    "__birefnet": "对应 background_removal",
+    "folder_name": "background_removal",
+    "birefnet.safetensors": "https://huggingface.co/Comfy-Org/BiRefNet/resolve/main/background_removal/birefnet.safetensors"
+  },
+  "detection": {
+    "__mediapipe_face": "对应 detection",
+    "folder_name": "detection",
+    "mediapipe_face_fp32.safetensors": "https://huggingface.co/Comfy-Org/mediapipe/blob/main/detection/mediapipe_face_fp32.safetensors"
   }
 }

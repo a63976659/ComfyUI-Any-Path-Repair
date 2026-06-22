@@ -67,7 +67,7 @@ export function isModelWidget(widgetName, nodeType = "") {
         // 子图节点（UUID类型）直接放行，提升的 widget 必然是模型相关的
         if (isSubgraphNode(nodeType)) {
             // 不拒绝，继续到下面的 EXACT_MATCH 检查
-        } else if (!nType.includes("load") && !nType.includes("provider") && !nType.includes("dino") && !nType.includes("sam") && !nType.includes("llm") && !nType.includes("tts")) {
+        } else if (!nType.includes("load") && !nType.includes("provider") && !nType.includes("dino") && !nType.includes("sam") && !nType.includes("llm") && !nType.includes("tts") && !nType.includes("landmarker") && !nType.includes("removal") && !nType.includes("moge")) {
             return false; 
         }
     }
@@ -81,6 +81,7 @@ export function isModelWidget(widgetName, nodeType = "") {
         "audio_checkpoint_name", "audio_model_name", "latent_upscale_model_name",
         "model", "vae", "clip", "text_encoder", "model_name", "模型名称",
         "gligen_name", "hypernetwork_name", "audio_encoder_name", "photomaker_model_name",
+        "bg_removal_name",
         "embedding", "control_net_override",
         "controlnet名称", "风格模型名称", "clip名称", "checkpoint名称", 
         "gligen名称", "放大模型名称", "超网络名称", "音频编码器名称", 

@@ -29,6 +29,7 @@ MANUAL_MAPPING = {
     "gligen_name": "gligen",
     "hypernetwork_name": "hypernetworks",
     "photomaker_model_name": "photomaker",
+    "bg_removal_name": "background_removal",
     # 子图中文名称映射
     "文本编码器": "clip",
     "模型": "latent_upscale_models",
@@ -54,7 +55,14 @@ NODE_SPECIFIC_MAPPING = {
     "LLM_Translator_Node": "LLM",
     "Qwen_TTS_Node": "TTS",
     "Qwen_TTS_VoiceDesign_Node": "TTS",
-    "Qwen_TTS_VoiceClone_Node": "TTS"
+    "Qwen_TTS_VoiceClone_Node": "TTS",
+    
+    # --- 背景移除与人脸检测模型节点的专属映射 ---
+    "LoadBackgroundRemovalModel": "background_removal",
+    "LoadMediaPipeFaceLandmarker": "detection",
+    
+    # --- MoGe 几何估计模型节点的专属映射 ---
+    "LoadMoGeModel": "geometry_estimation"
 }
 
 def get_type_mapping():
@@ -70,7 +78,10 @@ EXTRA_PATH_REGISTRATIONS = {
     "text_encoders": "clip",
     "diffusion_models": "unet",
     "model_patches": "loras",
-    "audio_encoders": "audio_checkpoints"
+    "audio_encoders": "audio_checkpoints",
+    "background_removal": "background_removal",
+    "detection": "detection",
+    "geometry_estimation": "geometry_estimation"
 }
 
 def register_custom_paths():
