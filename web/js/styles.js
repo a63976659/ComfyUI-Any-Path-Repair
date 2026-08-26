@@ -27,6 +27,8 @@ export function injectCSS() {
         .fixer-btn-confirm { background: #0072ff; color: white; border: none; padding: 8px 20px; border-radius: 4px; cursor: pointer; font-weight: bold; }
         .fixer-btn-cancel { background: #555; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; }
         .fixer-processing { background: linear-gradient(90deg, #00c6ff, #0072ff, #00c6ff) !important; background-size: 200% 100% !important; color: white !important; animation: fixerFlowEffect 2s ease infinite; cursor: wait !important; }
+        .fixer-btn-legacy-ui { width: 100%; margin: 4px 0; padding: 6px 10px; background: #333; color: #ddd; border: 1px solid #555; border-radius: 5px; font-size: 12px; cursor: pointer; transition: background 0.2s; }
+        .fixer-btn-legacy-ui:hover { background: #444; border-color: #0072ff; }
         @keyframes fixerFlowEffect { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
     `;
     document.head.appendChild(styleElem);
