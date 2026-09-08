@@ -160,6 +160,13 @@
 
 ## 📊 更新日志 (Changelog)
 
+### **2026-09-09** `v1.5.2`
+1. 新增对 OnnxDetectionModelLoader（WanAnimate 姿态/人脸检测 ONNX 模型）加载器的支持，修复 ViTPose 与 YOLO 模型路径问题。
+2. 新增对 LoadNLFModel（NLF 姿态估计模型）加载器的支持，修复 MTV Crafter 工作流的 NLF 模型路径问题。
+3. 兼容中文翻译插件：ViT姿态模型、YOLO模型、NLF模型 三个中文部件名（含子图场景）同样可被识别与修复。
+4. 补齐 ViTPose Huge 版（vitpose_h_wholebody_model.onnx 与 vitpose_h_wholebody_data.bin）下载链接，并让 ViTPose、YOLOv10 直链在类型未知时也能正确落到 detection 目录。
+5. 修正 yolo_model、vitpose_model 部件名的跨插件歧义：仅 ONNX 检测加载器与子图节点参与扫描，避免 LayerStyle（models/yolo）、RMBG（models/ultralytics）的同名部件被误判到 detection。
+
 ### **2026-06-22** `v1.5.1`
 1. 新增对 LoadBackgroundRemovalModel（背景移除模型）加载器的支持，修复背景移除模型路径问题。
 2. 新增对 LoadMediaPipeFaceLandmarker（人脸检测模型）加载器的支持，修复人脸检测模型路径问题。

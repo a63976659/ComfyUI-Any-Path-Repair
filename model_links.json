@@ -807,6 +807,19 @@
   "detection": {
     "__mediapipe_face": "对应 detection",
     "folder_name": "detection",
-    "mediapipe_face_fp32.safetensors": "https://huggingface.co/Comfy-Org/mediapipe/blob/main/detection/mediapipe_face_fp32.safetensors"
+    "mediapipe_face_fp32.safetensors": "https://huggingface.co/Comfy-Org/mediapipe/blob/main/detection/mediapipe_face_fp32.safetensors",
+    "yolov10m.onnx": "https://huggingface.co/Wan-AI/Wan2.2-Animate-14B/resolve/main/process_checkpoint/det/yolov10m.onnx",
+    "vitpose-l-wholebody.onnx": "https://huggingface.co/JunkyByte/easy_ViTPose/resolve/main/onnx/wholebody/vitpose-l-wholebody.onnx",
+    "vitpose-b-wholebody.onnx": "https://huggingface.co/JunkyByte/easy_ViTPose/resolve/main/onnx/wholebody/vitpose-b-wholebody.onnx",
+    "vitpose-s-wholebody.onnx": "https://huggingface.co/JunkyByte/easy_ViTPose/resolve/main/onnx/wholebody/vitpose-s-wholebody.onnx",
+    "__vitpose_huge": "Huge 版拆成两个文件，必须同时下载并放在同一目录",
+    "vitpose_h_wholebody_model.onnx": "https://huggingface.co/Kijai/vitpose_comfy/resolve/main/onnx/vitpose_h_wholebody_model.onnx",
+    "vitpose_h_wholebody_data.bin": "https://huggingface.co/Kijai/vitpose_comfy/resolve/main/onnx/vitpose_h_wholebody_data.bin"
+  },
+  "nlf": {
+    "__nlf_l_multi": "对应 nlf",
+    "folder_name": "nlf",
+    "nlf_l_multi_0.3.2.torchscript": "https://github.com/isarandi/nlf/releases/download/v0.3.2/nlf_l_multi_0.3.2.torchscript",
+    "nlf_l_multi_0.2.2.torchscript": "https://github.com/isarandi/nlf/releases/download/v0.2.2/nlf_l_multi_0.2.2.torchscript"
   }
 }

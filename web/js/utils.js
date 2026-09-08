@@ -72,6 +72,22 @@ export function isModelWidget(widgetName, nodeType = "") {
         }
     }
     
+    // 跨插件歧义部件名：yolo_model 在 LayerStyle(models/yolo)、RMBG(models/ultralytics) 与
+    // WanAnimatePreprocess(models/detection) 中指向不同目录，vitpose_model 也被 SCAIL-Pose 用作输入端口，
+    // 因此仅对 ONNX 检测加载器（类名含 onnx）放行；子图节点无法从类型判断，放行后交由后端映射兜底
+    const NODE_SCOPED_MATCH = {
+        "vitpose_model": ["onnx"], "yolo_model": ["onnx"],
+        "vit姿态模型": ["onnx"], "yolo模型": ["onnx"]
+    };
+    const scopedMatch = (n) => {
+        const keys = NODE_SCOPED_MATCH[n];
+        if (!keys) return null;
+        if (isSubgraphNode(nodeType)) return true;
+        return keys.some(k => nType.includes(k));
+    };
+    const scoped = scopedMatch(name);
+    if (scoped !== null) return scoped;
+    
     const EXACT_MATCH = [
         "ckpt_name", "vae_name", "lora_name", "clip_name", 
         "clip_name1", "clip_name2", "clip_name3", 
@@ -81,13 +97,15 @@ export function isModelWidget(widgetName, nodeType = "") {
         "audio_checkpoint_name", "audio_model_name", "latent_upscale_model_name",
         "model", "vae", "clip", "text_encoder", "model_name", "模型名称",
         "gligen_name", "hypernetwork_name", "audio_encoder_name", "photomaker_model_name",
-        "bg_removal_name",
+        "bg_removal_name", "nlf_model",
         "embedding", "control_net_override",
         "controlnet名称", "风格模型名称", "clip名称", "checkpoint名称", 
         "gligen名称", "放大模型名称", "超网络名称", "音频编码器名称", 
         "照片制作 模型", "embedding嵌入", "control net名称", "control net覆盖", "lora名称",
         // 子图中文名称
-        "文本编码器", "unet名称", "模型"
+        "文本编码器", "unet名称", "模型",
+        // 翻译插件生效后的中文部件名（比较时已统一小写）
+        "nlf模型"
     ];
     
     if (EXACT_MATCH.includes(name)) return true;
@@ -99,6 +117,8 @@ export function isModelWidget(widgetName, nodeType = "") {
     if (/^(.+)_\d+$/.test(name)) {
         const baseName = name.replace(/_\d+$/, '');
         if (EXACT_MATCH.includes(baseName)) return true;
+        const scopedBase = scopedMatch(baseName);
+        if (scopedBase !== null) return scopedBase;
     }
     
     return false;

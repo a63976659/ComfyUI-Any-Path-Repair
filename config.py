@@ -30,9 +30,20 @@ MANUAL_MAPPING = {
     "hypernetwork_name": "hypernetworks",
     "photomaker_model_name": "photomaker",
     "bg_removal_name": "background_removal",
+    # ONNX 检测加载器（WanAnimatePreprocess，模型位于 models/detection）；
+    # vitpose_model / yolo_model 在 LayerStyle(models/yolo)、RMBG(models/ultralytics)、
+    # SCAIL-Pose(输入端口) 中另有含义，前端 isModelWidget 已按节点类型限定，
+    # 这两条仅在子图（UUID 类型）场景下作为兜底映射
+    "vitpose_model": "detection",
+    "yolo_model": "detection",
+    "nlf_model": "nlf",
     # 子图中文名称映射
     "文本编码器": "clip",
     "模型": "latent_upscale_models",
+    # 翻译插件生效后的中文部件名（yolo/vitpose 同样只服务 ONNX 检测加载器与子图）
+    "ViT姿态模型": "detection",
+    "YOLO模型": "detection",
+    "NLF模型": "nlf",
     "UNet名称": "unet",
     "LoRA名称": "loras",
     "Checkpoint名称": "checkpoints"
@@ -62,7 +73,13 @@ NODE_SPECIFIC_MAPPING = {
     "LoadMediaPipeFaceLandmarker": "detection",
     
     # --- MoGe 几何估计模型节点的专属映射 ---
-    "LoadMoGeModel": "geometry_estimation"
+    "LoadMoGeModel": "geometry_estimation",
+    
+    # --- WanAnimate 姿态/人脸检测 ONNX 模型节点的专属映射 ---
+    "OnnxDetectionModelLoader": "detection",
+    
+    # --- MTV Crafter 的 NLF 姿态估计模型节点的专属映射 ---
+    "LoadNLFModel": "nlf"
 }
 
 def get_type_mapping():
@@ -81,7 +98,8 @@ EXTRA_PATH_REGISTRATIONS = {
     "audio_encoders": "audio_checkpoints",
     "background_removal": "background_removal",
     "detection": "detection",
-    "geometry_estimation": "geometry_estimation"
+    "geometry_estimation": "geometry_estimation",
+    "nlf": "nlf"
 }
 
 def register_custom_paths():

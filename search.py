@@ -146,7 +146,8 @@ async def handle_fix_request(request):
                 elif "/unet/" in url_decoded: final_download_type = "unet"
                 elif "/clip/" in url_decoded: final_download_type = "clip"
                 elif "background_removal" in url_decoded: final_download_type = "background_removal"
-                elif "detection" in url_decoded or "mediapipe" in url_decoded: final_download_type = "detection"
+                elif "detection" in url_decoded or "mediapipe" in url_decoded or "vitpose" in url_decoded or "yolov10" in url_decoded: final_download_type = "detection"
+                elif "/nlf/" in url_decoded or "nlf_l_multi" in url_decoded: final_download_type = "nlf"
 
                 if "/" in norm_val:
                     sub_folder = os.path.dirname(norm_val)

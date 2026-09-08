@@ -145,7 +145,8 @@ async def handle_download_request(request):
         elif "/vae/" in url_decoded or "/vae." in url_decoded: model_type = "vae"
         elif "lora" in url_decoded: model_type = "loras"
         elif "background_removal" in url_decoded: model_type = "background_removal"
-        elif "detection" in url_decoded or "mediapipe" in url_decoded: model_type = "detection"
+        elif "detection" in url_decoded or "mediapipe" in url_decoded or "vitpose" in url_decoded or "yolov10" in url_decoded: model_type = "detection"
+        elif "/nlf/" in url_decoded or "nlf_l_multi" in url_decoded: model_type = "nlf"
         
         if not model_type: return web.json_response({"success": False, "message": "无法识别模型类型"})
 
@@ -156,7 +157,7 @@ async def handle_download_request(request):
             "unet", "latent_upscale_models", "ultralytics", "gligen",
             "hypernetworks", "photomaker", "sams", "grounding-dino", 
             "animatediff_models", "upscale_models", "LLM", "TTS",
-            "background_removal", "detection"
+            "background_removal", "detection", "nlf"
         ]
         
         if model_type in STRICT_FOLDERS:
