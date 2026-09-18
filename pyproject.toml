@@ -1,7 +1,7 @@
 [project]
 name = "ComfyUI-Any-Path-Repair"
 description = "ComfyUI任意模型路径修复工具 | 智能模型路径修复引擎。告别"红框"报错，一键修复 ComfyUI 模型加载器路径错误。"
-version = "2.0.0"
+version = "2.0.1"
 license = {file = "LICENSE"} 
 
 [project.urls]
