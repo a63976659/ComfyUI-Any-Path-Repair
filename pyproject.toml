@@ -1,0 +1,17 @@
+[project]
+name = "ComfyUI-Any-Path-Repair"
+description = "ComfyUI任意模型路径修复工具 | 智能模型路径修复引擎。告别"红框"报错，一键修复 ComfyUI 模型加载器路径错误。"
+version = "2.0.0"
+license = {file = "LICENSE"} 
+
+[project.urls]
+Repository = "https://github.com/a63976659/ComfyUI-Any-Path-Repair"
+#  Used by Comfy Registry https://registry.comfy.org
+
+[tool.comfy]
+PublisherId = "a63976659"
+DisplayName = "ComfyUI-Any-Path-Repair"
+Icon = ""
+includes = [] 
+# "requires-comfyui" = ">=1.0.0"  # ComfyUI version compatibility
+
