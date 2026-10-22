@@ -77,7 +77,7 @@ export class FixerUI {
         });
     }
 
-    // 查找可见的插入锚点：旧版可见菜单 → settingsGroup → 新版 Vue 顶栏右侧按钮区 → 顶栏容器
+    // 查找插入锚点：可见菜单 → 命令栏 settingsGroup → 顶栏
     // 返回 { kind, anchor }；找不到返回 null（锚点可能尚未就绪，由调用方轮询重试）
     _findVisibleAnchor(app) {
         const comfyMenu = document.querySelector(".comfy-menu");
@@ -85,7 +85,7 @@ export class FixerUI {
             return { kind: "legacy", anchor: app.ui.menuContainer };
         }
         const settingsGroupEl = app.menu?.settingsGroup?.element;
-        if (settingsGroupEl && isVisibleEl(settingsGroupEl)) {
+        if (settingsGroupEl?.parentElement) {
             return { kind: "settingsGroup", anchor: settingsGroupEl };
         }
         const topRight = document.querySelector(".workflow-tabs-container .ml-auto");
@@ -172,10 +172,18 @@ export class FixerUI {
         }, 500);
     }
 
-    // 低频看门狗：按钮被顶栏重渲染移除、或所在容器变为不可见时自动重新插入
+    // 低频看门狗：恢复按钮挂载，并在命令栏就绪后从顶栏移回
     _startWatchdog(app) {
         if (this._watchdog) clearInterval(this._watchdog);
         this._watchdog = setInterval(() => {
+            const insertedEl = this._insertedEl || this.buttonElement;
+            const hit = this._findVisibleAnchor(app);
+            if (insertedEl && hit?.kind === "settingsGroup") {
+                if (insertedEl.parentElement !== hit.anchor.parentElement) {
+                    hit.anchor.before(insertedEl);
+                }
+                if (!insertedEl.isConnected) return;
+            }
             if (!this.buttonElement || !this.buttonElement.isConnected || !isVisibleEl(this.buttonElement)) {
                 (this._insertedEl || this.buttonElement)?.remove?.();
                 this.buttonElement = null;
