@@ -1,189 +1,249 @@
-import { fetchActiveDownloads, downloadModelFromServer, cancelDownloadFromServer } from "./utils.js";
+import { ACTIVE_STATES, cancelDownloadFromServer, downloadModelFromServer, subscribeTasks } from "./utils.js";
 
-export async function showResultDialog(uiInstance, conflicts, downloads, unknowns, onConfirm) {
-    const activeDownloads = await fetchActiveDownloads();
-    const activeSet = new Set(activeDownloads);
+let closeCurrentDialog = null;
 
-    const overlay = document.createElement("div");
-    overlay.className = "fixer-dialog-overlay";
-    overlay.style.display = "flex";
+function element(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = String(text);
+    return node;
+}
 
-    const dialog = document.createElement("div");
-    dialog.className = "fixer-dialog";
-    
-    let title = "🔍 扫描结果";
-    if (activeSet.size > 0) title = "⏳ 正在后台下载...";
-    else if (downloads.length > 0) title = "⬇️ 发现缺失模型 (可下载)";
-    
-    dialog.innerHTML = `
-        <div class="fixer-notice-top">关闭页面，不影响后台模型下载！</div>
-        <h3>${title}</h3>
-        <div class="fixer-dialog-content" id="fixer-list"></div>
-        <div class="fixer-dialog-footer">
-            <button class="fixer-btn-cancel" id="fixer-cancel" type="button">关闭页面</button>
-            ${conflicts.length > 0 ? '<button class="fixer-btn-confirm" id="fixer-confirm" type="button">确认修复</button>' : ''}
-        </div>
-    `;
+function button(text, handler, primary = false) {
+    const node = element("button", "fixer-action" + (primary ? " fixer-primary" : ""), text);
+    node.type = "button";
+    node.onclick = handler;
+    return node;
+}
 
-    const listContainer = dialog.querySelector("#fixer-list");
+function bytes(value) {
+    if (!value) return "0 B";
+    const unit = Math.min(Math.floor(Math.log(value) / Math.log(1024)), 3);
+    return (value / 1024 ** unit).toFixed(unit ? 1 : 0) + " " + ["B", "KB", "MB", "GB"][unit];
+}
 
-    if (unknowns.length > 0) {
-        const unTitle = document.createElement("div");
-        unTitle.className = "fixer-section-title";
-        unTitle.textContent = `未收录模型 (${unknowns.length})`;
-        listContainer.appendChild(unTitle);
-        unknowns.forEach(item => {
-            const div = document.createElement("div");
-            div.className = "fixer-download-box";
-            
-            // 【核心增强】：针对 undefined 的友好拦截提示
-            let displayVal = item.old_value;
-            let subText = "请手动下载";
-            if (displayVal === "undefined") {
-                displayVal = "未选择模型 (undefined)";
-                subText = "节点中未选中任何模型，或者本地模型文件夹为空。";
-            }
-            
-            div.innerHTML = `<span class="fixer-download-title" style="color:#aaa">❓ ${displayVal}</span><div style="font-size:12px; color:#666;">${subText}</div>`;
-            listContainer.appendChild(div);
-        });
-    }
+function searchLink(item) {
+    const link = element("a", "fixer-action", "搜索模型");
+    const term = (item.old_value || item.widget_name || "").split(/[\\/]/).pop();
+    link.href = "https://huggingface.co/models?search=" + encodeURIComponent(term);
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    return link;
+}
 
-    if (downloads.length > 0) {
-        const dlTitle = document.createElement("div");
-        dlTitle.className = "fixer-section-title";
-        dlTitle.textContent = `缺失模型 (${downloads.length})`;
-        listContainer.appendChild(dlTitle);
-
-        downloads.forEach(item => {
-            const div = document.createElement("div");
-            div.className = "fixer-download-box";
-            const justFileName = item.old_value.split(/[\\/]/).pop();
-            const safeName = justFileName.replace(/[^\w\-\.]/g, '_');
-            const isDownloading = activeSet.has(justFileName);
-
-            div.innerHTML = `
-                <span class="fixer-download-title">MISSING: ${justFileName}</span>
-                <div style="font-size:12px; color:#aaa;">目标: /models/${item.model_type}/</div>
-                <div class="fixer-btn-group" style="margin-top:5px;"></div>
-            `;
-            
-            const btnGroup = div.querySelector(".fixer-btn-group");
-            
-            // 下载/中断按钮
-            const dlBtn = document.createElement("button");
-            dlBtn.className = "fixer-download-btn";
-            dlBtn.id = `btn-dl-${safeName}`;
-
-            if (isDownloading) {
-                dlBtn.textContent = "❌ 中断下载";
-                dlBtn.style.background = "#d32f2f";
-                dlBtn.onclick = async (e) => {
-                    e.preventDefault();
-                    if(!confirm("确定要中断下载吗？")) return;
-                    dlBtn.disabled = true;
-                    dlBtn.textContent = "正在中断...";
-                    const res = await cancelDownloadFromServer(justFileName);
-                    if (!res.success) alert("中断失败: " + res.message);
-                };
-            } else {
-                dlBtn.textContent = "🚀 启动后台下载";
-                dlBtn.style.background = "#2a7a3b";
-                dlBtn.onclick = async (e) => {
-                    e.preventDefault();
-                    dlBtn.disabled = true;
-                    dlBtn.textContent = "🚀 请求中...";
-                    const res = await downloadModelFromServer(item.download_url, justFileName, item.model_type);
-                    if (res.success) {
-                        if (res.status === "exists") {
-                            dlBtn.textContent = "✅ 文件已存在";
-                            dlBtn.style.background = "#2a7a3b";
-                        } else {
-                            dlBtn.disabled = false;
-                            dlBtn.textContent = "❌ 中断下载";
-                            dlBtn.style.background = "#d32f2f";
-                            dlBtn.onclick = async () => {
-                                if(!confirm("确定要中断下载吗？")) return;
-                                await cancelDownloadFromServer(justFileName);
-                            };
-                        }
-                    } else {
-                        dlBtn.disabled = false;
-                        dlBtn.textContent = "❌ 启动失败";
-                        alert(res.message);
-                    }
-                };
-            }
-            
-            // 复制链接按钮
-            const copyBtn = document.createElement("button");
-            copyBtn.className = "fixer-copy-btn";
-            copyBtn.textContent = "📋 复制链接";
-            copyBtn.title = item.download_url;
-            
-            copyBtn.onclick = async (e) => {
-                e.preventDefault();
-                try {
-                    await navigator.clipboard.writeText(item.download_url);
-                    const originalText = "📋 复制链接";
-                    copyBtn.textContent = "✅ 已复制";
-                    copyBtn.style.background = "#2a7a3b";
-                    copyBtn.style.borderColor = "#2a7a3b";
-                    setTimeout(() => {
-                        copyBtn.textContent = originalText;
-                        copyBtn.style.background = "#444";
-                        copyBtn.style.borderColor = "#666";
-                    }, 1500);
-                } catch (err) {
-                    prompt("复制失败，请手动复制:", item.download_url);
-                }
-            };
-
-            btnGroup.appendChild(dlBtn);
-            btnGroup.appendChild(copyBtn);
-            listContainer.appendChild(div);
-        });
-    }
-
-    if (conflicts.length > 0) {
-        const cfTitle = document.createElement("div");
-        cfTitle.className = "fixer-section-title";
-        cfTitle.textContent = `路径冲突 (${conflicts.length})`;
-        listContainer.appendChild(cfTitle);
-        conflicts.forEach(item => {
-            const div = document.createElement("div");
-            div.className = "fixer-item";
-            let optionsHtml = item.candidates.map(path => `<option value="${path}">${path}</option>`).join("");
-            div.innerHTML = `<label>目标: <strong style="color:#aaa">${item.old_value}</strong></label><select id="sel-${item.id}-${item.widget_name}">${optionsHtml}</select>`;
-            listContainer.appendChild(div);
-        });
-    }
-
-    dialog.appendChild(listContainer);
+export function showResultDialog(state, returnFocus) {
+    closeCurrentDialog?.();
+    const previousFocus = returnFocus;
+    const overlay = element("div", "fixer-dialog-overlay");
+    const dialog = element("section", "fixer-dialog");
+    dialog.setAttribute("role", "dialog");
+    dialog.setAttribute("aria-modal", "true");
+    dialog.setAttribute("aria-labelledby", "path-fixer-dialog-title");
+    dialog.tabIndex = -1;
+    const title = element("h2", "", "模型路径与下载");
+    title.id = "path-fixer-dialog-title";
+    const notice = element("p", "fixer-muted", "关闭面板或刷新页面不影响下载；退出 ComfyUI 会停止任务。");
+    const content = element("div", "fixer-dialog-content");
+    const repairContent = element("div");
+    const missingContent = element("div");
+    const tasksContent = element("div");
+    const taskTitle = element("h3", "", "下载任务");
+    const taskEmpty = element("p", "fixer-muted", "暂无下载任务。");
+    tasksContent.append(taskTitle, taskEmpty);
+    content.append(repairContent, missingContent, tasksContent);
+    const footer = element("div", "fixer-dialog-footer");
+    const undo = button("撤销最近一次修复", async () => {
+        undo.disabled = confirm.disabled = true;
+        try { await state.onUndo(); } catch (error) { state.warnings.push(error.message); }
+        renderRepair();
+    });
+    const confirm = button("应用所选路径", async () => {
+        const selection = new Map();
+        for (const [key, select] of selections) if (select.value) selection.set(key, select.value);
+        if (!selection.size) {
+            state.warnings.push("请先选择需要修复的路径。");
+            renderRepair();
+            return;
+        }
+        undo.disabled = confirm.disabled = true;
+        try { await state.onConfirm(selection); } catch (error) { state.warnings.push(error.message); }
+        renderRepair();
+    }, true);
+    let unsubscribe = () => {};
+    const close = () => {
+        unsubscribe();
+        document.removeEventListener("keydown", onKeyDown);
+        overlay.remove();
+        if (closeCurrentDialog === close) closeCurrentDialog = null;
+        if (previousFocus?.isConnected) previousFocus.focus();
+    };
+    const closeButton = button("关闭", close);
+    footer.append(undo, confirm, closeButton);
+    dialog.append(title, notice, content, footer);
     overlay.appendChild(dialog);
     document.body.appendChild(overlay);
+    closeCurrentDialog = close;
+    const selections = new Map();
+    const taskRows = new Map();
+    const missingRows = [];
 
-    const closeDialog = (e) => {
-        if(e) e.preventDefault();
-        if (document.body.contains(overlay)) document.body.removeChild(overlay);
-        uiInstance.setButtonState(false);
-    };
-
-    const cancelBtn = dialog.querySelector("#fixer-cancel");
-    if(cancelBtn) cancelBtn.onclick = closeDialog;
-
-    const confirmBtn = dialog.querySelector("#fixer-confirm");
-    if (confirmBtn) {
-        confirmBtn.onclick = (e) => {
-            e.preventDefault();
-            const selectionMap = new Map();
-            conflicts.forEach(item => {
-                const selectId = `sel-${item.id}-${item.widget_name}`;
-                const select = document.getElementById(selectId);
-                if (select) selectionMap.set(`${item.id}-${item.widget_name}`, select.value);
-            });
-            closeDialog();
-            onConfirm(selectionMap);
-        };
+    function renderRepair() {
+        repairContent.replaceChildren();
+        selections.clear();
+        if (state.message) repairContent.appendChild(element("p", "fixer-muted", state.message));
+        for (const warning of state.warnings) repairContent.appendChild(element("p", "fixer-warning", warning));
+        if (state.changes.length) {
+            repairContent.appendChild(element("h3", "", "最近修复：" + state.changes.length));
+            for (const change of state.changes) {
+                const row = element("div", "fixer-item");
+                row.append(
+                    element("strong", "", change.widget_name),
+                    element("div", "fixer-old-path", "原路径：" + (change.old_value ?? "未选择")),
+                    element("div", "fixer-new-path", "新路径：" + change.new_value)
+                );
+                repairContent.appendChild(row);
+            }
+        }
+        if (state.conflicts.length) {
+            repairContent.appendChild(element("h3", "", "请选择同名模型：" + state.conflicts.length));
+            for (const item of state.conflicts) {
+                const row = element("label", "fixer-item");
+                const select = element("select", "fixer-select");
+                select.setAttribute("aria-label", "选择 " + item.old_value + " 的正确路径");
+                const placeholder = element("option", "", "请选择正确版本");
+                placeholder.value = "";
+                placeholder.disabled = true;
+                placeholder.selected = true;
+                select.appendChild(placeholder);
+                for (const path of item.candidates) {
+                    const option = element("option", "", path);
+                    option.value = path;
+                    select.appendChild(option);
+                }
+                selections.set(JSON.stringify([item.id, item.widget_name]), select);
+                row.append(element("strong", "", item.old_value), select);
+                repairContent.appendChild(row);
+            }
+        }
+        undo.hidden = !state.onUndo || !state.changes.length;
+        undo.disabled = false;
+        confirm.hidden = !state.onConfirm || !state.conflicts.length;
+        confirm.disabled = false;
     }
+
+    async function startMissing(row, item) {
+        row.pending = true;
+        row.action.disabled = true;
+        row.error.textContent = "";
+        try {
+            const task = await downloadModelFromServer(item);
+            row.taskId = task.id;
+        } catch (error) {
+            row.error.textContent = error.message;
+        } finally {
+            row.pending = false;
+            renderMissing(row, row.task);
+        }
+    }
+
+    function renderMissing(row, task) {
+        row.task = task;
+        if (task) row.target.textContent = "保存位置：" + task.path;
+        const active = task && ACTIVE_STATES.has(task.status);
+        row.action.textContent = active ? "任务进行中" : task?.status === "completed" ? "已下载，请重新扫描" : task ? "重新下载" : "下载";
+        row.action.disabled = row.pending || active || task?.status === "completed";
+    }
+
+    if (state.downloads.length) missingContent.appendChild(element("h3", "", "缺失模型：" + state.downloads.length));
+    for (const item of state.downloads) {
+        const box = element("div", "fixer-item");
+        const target = element("p", "fixer-muted", "目标目录：" + [item.model_type || "未知", item.subfolder].filter(Boolean).join("/"));
+        const error = element("p", "fixer-warning");
+        const row = { item, target, error, pending: false, task: null, taskId: null };
+        row.action = button("下载", () => startMissing(row, item), true);
+        const copy = button("复制链接", async () => {
+            try {
+                await navigator.clipboard.writeText(item.download_url);
+                copy.textContent = "已复制";
+            } catch {
+                window.prompt("请复制下载链接", item.download_url);
+            }
+        });
+        const actions = element("div", "fixer-actions");
+        actions.append(row.action, copy);
+        box.append(element("strong", "", item.old_value), target, actions, error);
+        missingContent.appendChild(box);
+        missingRows.push(row);
+    }
+    if (state.unknowns.length) missingContent.appendChild(element("h3", "", "未找到下载链接：" + state.unknowns.length));
+    for (const item of state.unknowns) {
+        const box = element("div", "fixer-item");
+        box.append(element("strong", "", item.old_value || "节点未选择模型"), searchLink(item));
+        missingContent.appendChild(box);
+    }
+
+    function renderTasks(tasks) {
+        taskEmpty.hidden = tasks.length > 0;
+        taskTitle.textContent = "下载任务：" + tasks.length;
+        const ids = new Set(tasks.map(task => task.id));
+        for (const [id, row] of taskRows) if (!ids.has(id)) { row.box.remove(); taskRows.delete(id); }
+        for (const task of tasks) {
+            let row = taskRows.get(task.id);
+            if (!row) {
+                row = { box: element("div", "fixer-item"), title: element("strong"), target: element("p", "fixer-muted"), status: element("p", "fixer-muted"), progress: element("progress", "fixer-progress"), error: element("p", "fixer-warning"), pending: false };
+                row.action = button("", null);
+                row.progress.max = 1;
+                row.box.append(row.title, row.target, row.status, row.progress, row.action, row.error);
+                taskRows.set(task.id, row);
+                tasksContent.appendChild(row.box);
+            }
+            row.title.textContent = task.filename;
+            row.currentTask = task;
+            row.target.textContent = "保存位置：" + task.path;
+            const labels = { queued: "排队中", downloading: "下载中", cancelling: "正在取消", completed: "已完成，请重新扫描模型路径", failed: "下载失败", cancelled: "已取消" };
+            row.status.textContent = (labels[task.status] || task.status) + "：" + bytes(task.current) + (task.total ? " / " + bytes(task.total) : "");
+            row.progress.hidden = !ACTIVE_STATES.has(task.status);
+            if (task.total) row.progress.value = Math.min(task.current / task.total, 1);
+            else row.progress.removeAttribute("value");
+            row.error.textContent = task.error || row.operationError || "";
+            row.action.textContent = ACTIVE_STATES.has(task.status) ? "取消下载" : task.status === "completed" ? "已完成" : "重试";
+            row.action.disabled = row.pending || task.status === "completed" || task.status === "cancelling";
+            row.action.onclick = async () => {
+                row.pending = true;
+                row.action.disabled = true;
+                row.operationError = "";
+                try {
+                    if (ACTIVE_STATES.has(task.status)) await cancelDownloadFromServer(task.id);
+                    else await downloadModelFromServer(task);
+                } catch (error) {
+                    row.operationError = error.message;
+                    row.error.textContent = error.message;
+                } finally {
+                    row.pending = false;
+                    row.action.disabled = row.currentTask.status === "completed" || row.currentTask.status === "cancelling";
+                }
+            };
+        }
+        for (const row of missingRows) {
+            const filename = row.item.old_value.split(/[\\/]/).pop();
+            const matching = tasks.filter(task => task.id === row.taskId || (task.filename === filename && task.model_type === row.item.model_type && task.subfolder === (row.item.subfolder || "")));
+            renderMissing(row, matching.at(-1));
+        }
+    }
+
+    function onKeyDown(event) {
+        if (event.key === "Escape") { event.preventDefault(); close(); }
+        if (event.key === "Tab") {
+            const focusable = [...dialog.querySelectorAll("button, a, select")].filter(node => !node.disabled && !node.hidden && node.getClientRects().length);
+            const first = focusable[0];
+            const last = focusable.at(-1);
+            if (!first) { event.preventDefault(); dialog.focus(); }
+            else if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog)) { event.preventDefault(); last.focus(); }
+            else if (!event.shiftKey && (document.activeElement === last || document.activeElement === dialog)) { event.preventDefault(); first.focus(); }
+        }
+    }
+    renderRepair();
+    unsubscribe = subscribeTasks(renderTasks);
+    document.addEventListener("keydown", onKeyDown);
+    dialog.focus();
 }

@@ -1,216 +1,215 @@
+import asyncio
+import logging
 import os
 import threading
 import time
-import sys
+import urllib.request
+import uuid
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
+
 import server
-import folder_paths
 from aiohttp import web
-from urllib.parse import unquote
-from .core_utils import normalize_path, parse_hf_url
 
-active_downloads = set()
-cancel_flags = {}
-download_lock = threading.Lock()
+from .config import canonical_type
+from .core_utils import infer_url_type, prepare_download_url, resolve_download_path
 
-def download_with_progress(url, save_path, filename_for_msg, cancel_event):
-    import urllib.request
-    
-    # 控制台简洁提示
-    print(f"\n⬇️ [Path Fixer] 启动下载: {filename_for_msg}")
-    
-    try:
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
-        req = urllib.request.Request(url, headers=headers)
-        
-        with urllib.request.urlopen(req, timeout=30) as response:
-            total_size = int(response.info().get('Content-Length', 0))
-            content_type = response.info().get('Content-Type', '')
-            
-            if 'text/html' in content_type and total_size < 100 * 1024:
-                raise Exception("链接返回了HTML页面，可能是无效链接。")
 
-            with open(save_path, 'wb') as out_file:
-                downloaded_size = 0
-                block_size = 32768
-                last_report_time = 0
-                start_time = time.time()
-                
-                while True:
-                    if cancel_event.is_set():
-                        print(f"\n🚫 [Path Fixer] 用户中断: {filename_for_msg}")
-                        return False, "用户中断"
+ACTIVE_STATES = {"queued", "downloading", "cancelling"}
 
-                    try:
-                        buffer = response.read(block_size)
-                    except Exception as e:
-                        raise Exception(f"网络中断: {str(e)}")
 
-                    if not buffer: break
-                    
-                    out_file.write(buffer)
-                    downloaded_size += len(buffer)
-                    
-                    current_time = time.time()
-                    if current_time - last_report_time > 0.5:
-                        progress = (downloaded_size / total_size) * 100 if total_size > 0 else 0
-                        speed = downloaded_size / (current_time - start_time + 0.001) / 1024 / 1024 
-                        sys.stdout.write(f"\r⏳ 下载中 [{filename_for_msg}]: {progress:.1f}% | {speed:.2f} MB/s")
-                        sys.stdout.flush()
-                        report_progress(filename_for_msg, downloaded_size, total_size)
-                        last_report_time = current_time
-            
-            sys.stdout.write(f"\r✅ 下载完成 [{filename_for_msg}]: 100%                 \n")
-            sys.stdout.flush()
-            report_progress(filename_for_msg, downloaded_size, total_size)
-            
-        return True, ""
-    except Exception as e:
-        sys.stdout.write("\n")
-        return False, str(e)
+@dataclass
+class DownloadTask:
+    id: str
+    url: str
+    filename: str
+    model_type: str
+    subfolder: str
+    path: str
+    status: str = "queued"
+    current: int = 0
+    total: int = 0
+    error: str = ""
+    revision: int = 0
+    updated_at: float = field(default_factory=time.time)
+    cancel_event: threading.Event = field(default_factory=threading.Event, repr=False)
 
-def report_progress(filename, current, total):
-    server.PromptServer.instance.send_sync("model_fixer_download_progress", {
-        "filename": filename, "current": current, "total": total
-    })
+    def public(self):
+        return {name: getattr(self, name) for name in (
+            "id", "url", "filename", "model_type", "subfolder", "path",
+            "status", "current", "total", "error", "revision", "updated_at",
+        )}
 
-def run_download_task(url, repo_id, filename, save_dir, source="HF Mirror"):
-    safe_filename = os.path.basename(filename) 
-    full_path = os.path.join(save_dir, safe_filename)
-    
-    # 强制转换直链和镜像
-    final_url = url.replace("huggingface.co", "hf-mirror.com") if source == "HF Mirror" else url
-    final_url = final_url.replace("/blob/", "/resolve/")
 
-    cancel_event = threading.Event()
-    with download_lock:
-        cancel_flags[safe_filename] = cancel_event
+class DownloadManager:
+    def __init__(self, max_workers=3):
+        self.tasks = {}
+        self.lock = threading.Lock()
+        self.executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="path-fixer")
 
-    success = False
-    error_msg = ""
-    
-    try:
-        if source == "ModelScope":
+    def _notify(self, snapshot):
+        try:
+            server.PromptServer.instance.send_sync("model_fixer_task", snapshot)
+        except Exception:
+            logging.exception("[Path-Fixer] 下载状态通知失败，请重新打开修复面板查看")
+
+    def _prune(self):
+        finished = sorted((task for task in self.tasks.values() if task.status not in ACTIVE_STATES), key=lambda task: task.updated_at)
+        for task in finished[:-128]:
+            del self.tasks[task.id]
+
+    def _update(self, task, **changes):
+        with self.lock:
+            for name, value in changes.items():
+                setattr(task, name, value)
+            task.revision += 1
+            task.updated_at = time.time()
+            snapshot = task.public()
+            self._prune()
+        self._notify(snapshot)
+
+    def snapshots(self):
+        with self.lock:
+            return [task.public() for task in self.tasks.values()]
+
+    def refresh_tasks(self):
+        with self.lock:
+            completed = [task for task in self.tasks.values() if task.status == "completed"]
+        for task in completed:
             try:
-                from modelscope.hub.file_download import model_file_download
-                # ModelScope logic placeholder
-                pass 
-            except ImportError: raise ImportError("未安装 modelscope")
-        else:
-            if not os.path.exists(save_dir): os.makedirs(save_dir)
-            success, error_msg = download_with_progress(final_url, full_path, safe_filename, cancel_event)
-            
-            if not success and error_msg == "用户中断":
-                if os.path.exists(full_path):
-                    try: os.remove(full_path)
-                    except: pass
-                raise Exception("下载已中断")
-            
-            if not success: raise Exception(error_msg)
-            
-            # 空文件检查
-            if os.path.exists(full_path) and os.path.getsize(full_path) < 1024:
-                try: os.remove(full_path)
-                except: pass
-                raise Exception("文件过小，可能是无效链接")
+                valid = os.path.isfile(task.path) and os.path.getsize(task.path) > 0
+            except OSError:
+                valid = False
+            if not valid:
+                self._update(task, status="failed", error="文件已被移动、删除或清空，可重新下载")
+        return self.snapshots()
 
-        success = True
-    except Exception as e:
-        error_msg = str(e)
-        success = False
-        if os.path.exists(full_path):
-            try: os.remove(full_path)
-            except: pass
-    finally:
-        with download_lock:
-            active_downloads.discard(safe_filename)
-            if safe_filename in cancel_flags: del cancel_flags[safe_filename]
-    
-    server.PromptServer.instance.send_sync("model_fixer_download_status", {
-        "filename": safe_filename, "success": success, "error": error_msg, "path": full_path if success else None
-    })
+    def start(self, url, model_type, subfolder="", filename=None):
+        url, url_filename = prepare_download_url(url)
+        model_type = canonical_type(model_type) or infer_url_type(url)
+        filename = filename or url_filename
+        path = resolve_download_path(model_type, subfolder, filename)
+        with self.lock:
+            for task in self.tasks.values():
+                if os.path.normcase(task.path) == os.path.normcase(path) and task.status in ACTIVE_STATES:
+                    return task.public()
+            task = DownloadTask(uuid.uuid4().hex, url, filename, model_type, subfolder, path)
+            if os.path.exists(path):
+                if not os.path.isfile(path) or os.path.getsize(path) == 0:
+                    raise ValueError("目标位置已有无效文件或目录，请检查后重试")
+                task.status = "completed"
+                task.current = task.total = os.path.getsize(path)
+            self.tasks[task.id] = task
+            self._prune()
+            snapshot = task.public()
+        self._notify(snapshot)
+        if task.status == "queued":
+            try:
+                self.executor.submit(self._run, task)
+            except RuntimeError as error:
+                self._update(task, status="failed", error=str(error))
+                raise
+        return snapshot
+
+    def cancel(self, task_id):
+        with self.lock:
+            task = self.tasks.get(task_id)
+            if task is None:
+                raise ValueError("下载任务不存在")
+            if task.status not in ACTIVE_STATES:
+                return task.public()
+            task.cancel_event.set()
+            task.status = "cancelled" if task.status == "queued" else "cancelling"
+            task.revision += 1
+            task.updated_at = time.time()
+            snapshot = task.public()
+        self._notify(snapshot)
+        return snapshot
+
+    def _run(self, task):
+        part_path = task.path + "." + task.id + ".part"
+        try:
+            if task.cancel_event.is_set():
+                raise InterruptedError("下载已取消")
+            self._update(task, status="downloading")
+            os.makedirs(os.path.dirname(task.path), exist_ok=True)
+            request = urllib.request.Request(task.url, headers={"User-Agent": "ComfyUI-Any-Path-Repair"})
+            with urllib.request.urlopen(request, timeout=30) as response:
+                content_type = response.info().get("Content-Type", "").lower()
+                if "text/html" in content_type:
+                    raise ValueError("链接返回了网页，请使用模型文件直链")
+                total = int(response.info().get("Content-Length", 0))
+                downloaded = 0
+                last_report = 0
+                self._update(task, total=total)
+                with open(part_path, "xb") as output:
+                    while True:
+                        if task.cancel_event.is_set():
+                            raise InterruptedError("下载已取消")
+                        block = response.read(256 * 1024)
+                        if not block:
+                            break
+                        output.write(block)
+                        downloaded += len(block)
+                        now = time.monotonic()
+                        if now - last_report >= 0.5:
+                            self._update(task, current=downloaded)
+                            last_report = now
+                    output.flush()
+                    os.fsync(output.fileno())
+                if task.cancel_event.is_set():
+                    raise InterruptedError("下载已取消")
+                if downloaded == 0 or (total and downloaded != total):
+                    raise ValueError(f"下载不完整：收到 {downloaded} 字节，预期 {total or '非空文件'}")
+            with self.lock:
+                try:
+                    if os.name == "nt":
+                        os.rename(part_path, task.path)
+                    else:
+                        os.link(part_path, task.path)
+                except FileExistsError:
+                    raise FileExistsError("目标文件已由其他操作创建，本次下载未覆盖它") from None
+            self._update(task, status="completed", current=downloaded, total=total or downloaded)
+        except InterruptedError as error:
+            self._update(task, status="cancelled", error=str(error))
+        except Exception as error:
+            self._update(task, status="failed", error=str(error))
+        finally:
+            if os.path.exists(part_path):
+                try:
+                    os.remove(part_path)
+                except OSError:
+                    logging.exception("[Path-Fixer] 无法清理下载临时文件：%s", part_path)
+
+
+download_manager = DownloadManager()
+
 
 async def handle_download_request(request):
     try:
-        json_data = await request.json()
-        url = json_data.get("url")
-        model_type = json_data.get("model_type") 
-        source = json_data.get("source", "HF Mirror")
+        data = await request.json()
+        if not isinstance(data, dict):
+            raise ValueError("下载参数格式错误")
+        task = await asyncio.to_thread(
+            download_manager.start, data.get("url"), data.get("model_type"),
+            data.get("subfolder", ""), data.get("filename"),
+        )
+        return web.json_response({"success": True, "task": task})
+    except (ValueError, TypeError) as error:
+        return web.json_response({"error": str(error)}, status=400)
+    except Exception as error:
+        return web.json_response({"error": f"无法启动下载：{error}"}, status=500)
 
-        if not url: return web.json_response({"success": False, "message": "参数缺失"})
-
-        # 1. URL 嗅探与强制类型纠正
-        url_decoded = unquote(url).lower()
-        if "diffusion_models" in url_decoded: model_type = "diffusion_models"
-        elif "text_encoders" in url_decoded: model_type = "text_encoders"
-        elif "/vae/" in url_decoded or "/vae." in url_decoded: model_type = "vae"
-        elif "lora" in url_decoded: model_type = "loras"
-        elif "background_removal" in url_decoded: model_type = "background_removal"
-        elif "detection" in url_decoded or "mediapipe" in url_decoded or "vitpose" in url_decoded or "yolov10" in url_decoded: model_type = "detection"
-        elif "/nlf/" in url_decoded or "nlf_l_multi" in url_decoded: model_type = "nlf"
-        
-        if not model_type: return web.json_response({"success": False, "message": "无法识别模型类型"})
-
-        # 2. 物理路径锁定 (加入 LLM 和 TTS)
-        target_dir = None
-        STRICT_FOLDERS = [
-            "diffusion_models", "text_encoders", "vae", "loras", "clip", 
-            "unet", "latent_upscale_models", "ultralytics", "gligen",
-            "hypernetworks", "photomaker", "sams", "grounding-dino", 
-            "animatediff_models", "upscale_models", "LLM", "TTS",
-            "background_removal", "detection", "nlf"
-        ]
-        
-        if model_type in STRICT_FOLDERS:
-            direct_path = os.path.join(folder_paths.models_dir, model_type)
-            if not os.path.exists(direct_path):
-                try: os.makedirs(direct_path)
-                except: pass
-            if os.path.exists(direct_path): target_dir = direct_path
-        
-        # 3. 兜底查询
-        if not target_dir:
-            target_dirs = folder_paths.get_folder_paths(model_type)
-            if target_dirs: target_dir = target_dirs[0]
-            else: target_dir = os.path.join(folder_paths.models_dir, model_type)
-
-        if not os.path.exists(target_dir): os.makedirs(target_dir)
-
-        repo_id, raw_filename = parse_hf_url(url)
-        if not raw_filename: raw_filename = os.path.basename(normalize_path(url))
-        safe_filename = os.path.basename(raw_filename)
-
-        with download_lock:
-            if safe_filename in active_downloads:
-                return web.json_response({"success": False, "status": "downloading", "message": "任务进行中"})
-            
-            save_path = os.path.join(target_dir, safe_filename)
-            if os.path.exists(save_path):
-                return web.json_response({"success": True, "status": "exists", "message": "文件已存在"})
-            
-            active_downloads.add(safe_filename)
-
-        thread = threading.Thread(target=run_download_task, args=(url, repo_id, raw_filename, target_dir, source))
-        thread.daemon = True
-        thread.start()
-        
-        return web.json_response({"success": True, "status": "started", "message": "已启动"})
-    except Exception as e:
-        if 'safe_filename' in locals():
-            with download_lock: active_downloads.discard(safe_filename)
-        return web.json_response({"success": False, "message": str(e)})
 
 async def handle_cancel_request(request):
     try:
-        json_data = await request.json()
-        filename = json_data.get("filename")
-        with download_lock:
-            if filename in cancel_flags:
-                cancel_flags[filename].set()
-                return web.json_response({"success": True, "message": "中断信号已发送"})
-            else:
-                return web.json_response({"success": False, "message": "任务不存在"})
-    except Exception as e:
-        return web.json_response({"success": False, "message": str(e)})
+        data = await request.json()
+        if not isinstance(data, dict) or not isinstance(data.get("task_id"), str):
+            raise ValueError("缺少下载任务编号")
+        return web.json_response({"success": True, "task": download_manager.cancel(data["task_id"])})
+    except ValueError as error:
+        return web.json_response({"error": str(error)}, status=400)
+
 
 async def handle_get_active_tasks(request):
-    return web.json_response({"active": list(active_downloads)})
+    return web.json_response({"tasks": await asyncio.to_thread(download_manager.refresh_tasks)})

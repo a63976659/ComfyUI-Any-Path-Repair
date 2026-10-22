@@ -1,200 +1,89 @@
 import { app } from "../../../scripts/app.js";
-import { error, isModelWidget, fetchFixPaths, fetchActiveDownloads } from "./utils.js";
+import { fetchFixPaths, fetchModelRules, fetchTasks } from "./utils.js";
+import { applyFixes, collectQueries, extractLinksFromWorkflow, undoFixes } from "./workflow.js";
 import { FixerUI } from "./ui.js";
 
-let cachedScanResult = { conflicts: [], downloads: [], unknowns: [] };
+let busy = false;
+let lastRepair = null;
 
-function extractLinksFromWorkflow(graph) {
-    const dynamicLinks = {}; 
-    const TIMEOUT_MS = 3000; 
-    const startTime = Date.now();
-    dynamicLinks["uncategorized"] = {};
-
-    for (const node of graph._nodes) {
-        if (Date.now() - startTime > TIMEOUT_MS) break;
-        if (!node.widgets) continue;
-
-        for (const widget of node.widgets) {
-            if (typeof widget.value !== "string" || !widget.value.includes("http")) continue;
-
-            const text = widget.value;
-            const lines = text.split("\n");
-            let currentCategory = "uncategorized";
-
-            for (const line of lines) {
-                const trimmed = line.trim();
-                if (!trimmed) continue;
-                const headerMatch = trimmed.match(/^(?:\*\*|\#\#)?\s*([a-zA-Z0-9_\-\s]+?)(?:\s*\*\*)?(?:\s*:)?$/);
-                if (headerMatch) {
-                    if (!trimmed.includes("http") && !trimmed.includes("]")) {
-                        currentCategory = headerMatch[1].trim().toLowerCase().replace(/\s+/g, "_");
-                        continue;
-                    }
-                }
-                const linkMatch = trimmed.match(/\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/);
-                if (linkMatch) {
-                    const fileName = linkMatch[1].trim();
-                    const url = linkMatch[2].trim();
-                    if (!dynamicLinks[currentCategory]) dynamicLinks[currentCategory] = {};
-                    dynamicLinks[currentCategory][fileName] = url;
-                }
-            }
-        }
-    }
-    return dynamicLinks;
-}
-
-async function executePathFix(uiInstance) {
+async function executePathFix(ui) {
+    if (busy) return;
+    busy = true;
+    ui.setButtonState(true, "扫描中...");
     const graph = app.graph;
-    
-    // 优先恢复状态
-    const activeDownloads = await fetchActiveDownloads();
-    if (activeDownloads.length > 0) {
-        uiInstance.setButtonState(true, "恢复状态...");
-        uiInstance.showResultDialog(cachedScanResult.conflicts, cachedScanResult.downloads, cachedScanResult.unknowns, (map) => applyFixes(graph, map));
-        uiInstance.setButtonState(false);
-        return;
-    }
-    
-    // 开始扫描
-    const queries = [];
-    uiInstance.setButtonState(true, "扫描中...");
-    cachedScanResult = { conflicts: [], downloads: [], unknowns: [] };
-    const dynamicLinks = extractLinksFromWorkflow(graph);
-    
+    let completionLabel = null;
     try {
-        for (const node of graph._nodes) {
-            if (!node.widgets) continue;
-            for (const widget of node.widgets) {
-                // 将 node.type 传入进行交叉验证
-                if (isModelWidget(widget.name, node.type)) {
-                    let val = widget.value;
-                    
-                    // 【核心修复】：处理没有任何模型时的 undefined、null 或空字符串
-                    if (val === undefined || val === null || val === "") {
-                        val = "undefined";
-                    } else if (typeof val !== "string") {
-                        val = String(val);
+        const [rules] = await Promise.all([fetchModelRules(), fetchTasks(), app.reloadNodeDefs()]);
+        const { queries, snapshot } = collectQueries(graph, rules);
+        const results = queries.length ? await fetchFixPaths(queries, extractLinksFromWorkflow(graph)) : [];
+        const conflicts = results.filter(item => item.candidates.length > 1);
+        const downloads = results.filter(item => !item.candidates.length && item.download_url);
+        const unknowns = results.filter(item => !item.candidates.length && !item.download_url);
+        const autoFixes = results.filter(item => item.candidates.length === 1).map(item => ({ ...item, new_value: item.candidates[0] }));
+        const applied = await applyFixes(graph, autoFixes, snapshot);
+        let sessionStarted = applied.changes.length > 0;
+        if (applied.changes.length) lastRepair = { graph, changes: applied.changes };
+        const state = {
+            conflicts, downloads, unknowns,
+            changes: lastRepair?.graph === graph ? lastRepair.changes : [],
+            warnings: applied.warnings,
+            message: queries.length ? (results.length ? "" : "本次扫描未发现需要修复的模型路径。") : "当前工作流中未发现可修复的模型节点。",
+            onConfirm: async selection => {
+                if (busy) return;
+                busy = true;
+                ui.setButtonState(true);
+                try {
+                    const fixes = state.conflicts.filter(item => selection.has(JSON.stringify([item.id, item.widget_name])))
+                        .map(item => ({ ...item, new_value: selection.get(JSON.stringify([item.id, item.widget_name])) }));
+                    const result = await applyFixes(graph, fixes, snapshot);
+                    if (result.changes.length) {
+                        if (!sessionStarted) lastRepair = { graph, changes: [] };
+                        sessionStarted = true;
+                        lastRepair.changes.push(...result.changes);
                     }
-
-                    queries.push({
-                        id: node.id, 
-                        widget_name: widget.name, 
-                        current_val: val, 
-                        type: widget.name,
-                        node_type: node.type
-                    });
+                    state.changes = lastRepair?.graph === graph ? lastRepair.changes : [];
+                    state.warnings.push(...result.warnings);
+                    state.conflicts = state.conflicts.filter(item => !selection.has(JSON.stringify([item.id, item.widget_name])));
+                } finally {
+                    busy = false;
+                    ui.setButtonState(false);
+                }
+            },
+            onUndo: async () => {
+                if (busy || lastRepair?.graph !== graph) return;
+                busy = true;
+                ui.setButtonState(true);
+                try {
+                    const result = await undoFixes(graph, lastRepair.changes);
+                    lastRepair.changes = result.remaining;
+                    state.changes = result.remaining;
+                    state.warnings.push(...result.warnings);
+                    state.message = "已撤销 " + result.restored + " 项路径修改。";
+                } finally {
+                    busy = false;
+                    ui.setButtonState(false);
                 }
             }
-        }
-
-        if (queries.length === 0) {
-            alert("当前工作流中未发现可修复的模型节点。");
-            uiInstance.setButtonState(false);
-            return;
-        }
-
-        uiInstance.setButtonState(true, "匹配中...");
-        const data = await fetchFixPaths(queries, dynamicLinks);
-        const results = data.fixed || [];
-
-        if (results.length === 0) {
-            alert("✅ 所有模型路径均正确。");
-            uiInstance.setButtonState(false);
-            return;
-        }
-
-        const autoFixes = [];
-        const conflicts = [];
-        const downloads = [];
-        const unknowns = [];
-
-        results.forEach(res => {
-            if (res.candidates.length === 0) {
-                if (res.download_url) downloads.push(res);
-                else unknowns.push(res);
-            } else if (res.candidates.length === 1) {
-                autoFixes.push({ id: res.id, widget_name: res.widget_name, new_value: res.candidates[0], old_value: res.old_value });
-            } else {
-                conflicts.push(res);
-            }
-        });
-
-        cachedScanResult = { conflicts, downloads, unknowns };
-
-        let fixedCount = 0;
-        if (autoFixes.length > 0) {
-            applyFixes(graph, autoFixes);
-            fixedCount += autoFixes.length;
-        }
-
-        if (conflicts.length > 0 || downloads.length > 0 || unknowns.length > 0) {
-            uiInstance.setButtonState(true, "等待操作...");
-            uiInstance.showResultDialog(conflicts, downloads, unknowns, (userSelectionMap) => {
-                const manualFixes = [];
-                conflicts.forEach(conflict => {
-                    const key = `${conflict.id}-${conflict.widget_name}`;
-                    const selectedPath = userSelectionMap.get(key);
-                    if (selectedPath) {
-                        manualFixes.push({ id: conflict.id, widget_name: conflict.widget_name, new_value: selectedPath, old_value: conflict.old_value });
-                    }
-                });
-                applyFixes(graph, manualFixes);
-                fixedCount += manualFixes.length;
-                finishProcess(uiInstance, graph, fixedCount);
-            });
+        };
+        ui.setResult(state);
+        if (conflicts.length || downloads.length || unknowns.length || applied.warnings.length) {
+            ui.showResultDialog(state);
         } else {
-            finishProcess(uiInstance, graph, fixedCount);
+            completionLabel = applied.changes.length ? "已修复 " + applied.changes.length + " 项" : queries.length ? "路径正常" : "未发现模型节点";
         }
-
-    } catch (e) {
-        error("执行修复出错:", e);
-        uiInstance.setButtonState(false);
+    } catch (error) {
+        console.error("[Path-Fixer]", error);
+        ui.showResultDialog({ conflicts: [], downloads: [], unknowns: [], changes: [], warnings: [error.message], message: "扫描未完成，请解决上述问题后重试。" });
+    } finally {
+        busy = false;
+        ui.setButtonState(false, completionLabel);
     }
-}
-
-function ensureWidgetOption(widget, targetPath) {
-    if (!widget.options || !widget.options.values) return targetPath;
-    const values = widget.options.values;
-    const normalizedTarget = targetPath.replace(/\\/g, "/").toLowerCase();
-    for (const option of values) {
-        if (typeof option !== "string") continue;
-        const normalizedOption = option.replace(/\\/g, "/").toLowerCase();
-        if (normalizedOption === normalizedTarget) return option; 
-    }
-    widget.options.values.push(targetPath);
-    return targetPath;
-}
-
-function applyFixes(graph, fixList) {
-    for (const fix of fixList) {
-        const node = graph.getNodeById(fix.id);
-        if (node) {
-            const widget = node.widgets.find(w => w.name === fix.widget_name);
-            if (widget) {
-                const finalValue = ensureWidgetOption(widget, fix.new_value);
-                widget.value = finalValue;
-                if (widget.callback) widget.callback(widget.value, graph, node, {}, {});
-                if (node.onResize) node.onResize(node.size);
-            }
-        }
-    }
-}
-
-function finishProcess(uiInstance, graph, count) {
-    if (count > 0) {
-        app.graph.setDirtyCanvas(true, true);
-        uiInstance.setButtonState(false, `已修复 ${count}`);
-    } else {
-        uiInstance.setButtonState(false);
-    }
-    setTimeout(() => uiInstance.setButtonState(false), 2000);
 }
 
 app.registerExtension({
     name: "ComfyUI.ModelPathFixer",
-    async setup(app) {
+    async setup() {
         const ui = new FixerUI(executePathFix);
-        setTimeout(() => ui.addPanelButtons(app), 500);
+        ui.addPanelButtons(app);
     }
 });

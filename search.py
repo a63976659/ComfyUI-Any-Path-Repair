@@ -1,164 +1,98 @@
+import asyncio
 import os
-import re
+
 import folder_paths
 from aiohttp import web
-from urllib.parse import unquote
-from .core_utils import normalize_path, load_local_links
-from .config import get_type_mapping, NODE_SPECIFIC_MAPPING
+
+from .config import canonical_type, resolve_model_type
+from .core_utils import infer_url_type, load_local_links, model_subfolder, normalize_path, path_key
+
 
 def build_file_index(model_types):
     index = {}
-    # 【修复2】去重 model_types，防止注册表和手动追加重复扫描
-    for m_type in set(model_types):
-        try:
+    for model_type in set(model_types):
+        by_name = {}
+        if model_type in {"LLM", "TTS"}:
             files = []
-            if m_type in ["LLM", "TTS"]:
-                target_dir = os.path.join(folder_paths.models_dir, m_type)
-                if os.path.exists(target_dir):
-                    # 【修复1】只取文件夹名 (d)，不要拼凑带盘符的绝对路径
-                    files = [d for d in os.listdir(target_dir) if os.path.isdir(os.path.join(target_dir, d))]
-            else:
-                files = folder_paths.get_filename_list(m_type)
-                
-            for f in files:
-                base_name = os.path.basename(normalize_path(f)).lower()
-                if base_name not in index: index[base_name] = []
-                index[base_name].append({"full_path": f, "model_type": m_type})
-        except: continue
+            for root in folder_paths.get_folder_paths(model_type):
+                if os.path.isdir(root):
+                    files.extend(name for name in os.listdir(root) if os.path.isdir(os.path.join(root, name)))
+        elif model_type in folder_paths.folder_names_and_paths:
+            files = folder_paths.get_filename_list(model_type)
+        else:
+            files = []
+        for filename in files:
+            by_name.setdefault(normalize_path(filename).rsplit("/", 1)[-1].casefold(), []).append(filename)
+        index[model_type] = by_name
     return index
+
+
+def find_download_link(basename, model_type, databases):
+    for database in databases:
+        matches = []
+        for category, links in database.items():
+            if not isinstance(links, dict):
+                continue
+            category_type = canonical_type(category)
+            if model_type and category_type not in {model_type, "uncategorized"}:
+                continue
+            for name, url in links.items():
+                if name.casefold() == basename and isinstance(url, str):
+                    priority = 0 if model_type and category_type == model_type else 1
+                    matches.append((priority, url, model_type or (category_type if category != "uncategorized" else infer_url_type(url))))
+        if matches:
+            priority = min(match[0] for match in matches)
+            unique = list(dict.fromkeys((url, category) for rank, url, category in matches if rank == priority))
+            if len(unique) == 1:
+                return unique[0]
+            return None, model_type
+    return None, model_type
+
+
+def scan_models(queries, dynamic_links):
+    prepared = []
+    for item in queries:
+        if not isinstance(item, dict) or not isinstance(item.get("type"), str) or not isinstance(item.get("node_type"), str):
+            raise ValueError("模型查询格式错误")
+        value = item.get("current_val", "")
+        if not isinstance(value, str):
+            raise ValueError("模型路径必须是字符串")
+        options = item.get("options")
+        if options is not None and (not isinstance(options, list) or any(not isinstance(option, str) for option in options)):
+            raise ValueError("模型候选选项格式错误")
+        prepared.append((item, value, options, resolve_model_type(item["type"], item["node_type"], value)))
+    required_types = {model_type for _, _, options, model_type in prepared if options is None and model_type}
+    file_index = build_file_index(required_types)
+    local_links = load_local_links()
+    results = []
+    for item, value, options, model_type in prepared:
+        basename = normalize_path(value).rsplit("/", 1)[-1].casefold()
+        if options is not None:
+            if value and value in options:
+                continue
+            candidates = [option for option in options if basename and normalize_path(option).rsplit("/", 1)[-1].casefold() == basename]
+        else:
+            candidates = file_index.get(model_type, {}).get(basename, [])
+            if value and path_key(value) in {path_key(candidate) for candidate in candidates}:
+                continue
+        candidates = list(dict.fromkeys(candidates))
+        url, download_type = (None, model_type) if candidates else find_download_link(basename, model_type, (dynamic_links, local_links))
+        results.append({
+            "id": item.get("id"), "widget_name": item["type"], "old_value": value,
+            "candidates": candidates, "download_url": url, "model_type": download_type,
+            "subfolder": model_subfolder(value, download_type),
+        })
+    return results
+
 
 async def handle_fix_request(request):
     try:
-        json_data = await request.json()
-        query_list = json_data.get("queries", [])
-        dynamic_links = json_data.get("dynamic_links", {})
-        local_links_db = load_local_links()
-        
-        results = []
-        type_mapping = get_type_mapping()
-        
-        # 再次确保大类列表不会有重复项
-        all_types = list(set(list(folder_paths.folder_names_and_paths.keys()) + ["LLM", "TTS"]))
-        file_index = build_file_index(all_types)
-        
-        for item in query_list:
-            current_val = item.get("current_val")
-            if not current_val: continue
-            
-            widget_type = item.get("type")
-            node_type = item.get("node_type")
-            
-            # 优先检查节点级映射
-            standard_type = NODE_SPECIFIC_MAPPING.get(node_type)
-            if not standard_type:
-                standard_type = type_mapping.get(widget_type)
-            
-            # 子图后缀处理：unet_name_1 → unet_name
-            if not standard_type:
-                base_widget = re.sub(r'_\d+$', '', widget_type)
-                if base_widget != widget_type:
-                    standard_type = type_mapping.get(base_widget)
-            
-            # 路径前缀分析
-            norm_val = normalize_path(current_val)
-            if not standard_type and "/" in norm_val:
-                potential_folder = norm_val.split("/")[0].lower()
-                for known_type in folder_paths.folder_names_and_paths:
-                    if known_type.lower() == potential_folder:
-                        standard_type = known_type
-                        break
-
-            if not standard_type:
-                w_lower = widget_type.lower()
-                if "clip" in w_lower or "text_encoder" in w_lower: standard_type = "clip"
-                elif "unet" in w_lower or "diffusion" in w_lower: standard_type = "unet"
-                elif "lora" in w_lower: standard_type = "loras"
-                elif "checkpoint" in w_lower: standard_type = "checkpoints"
-                # 子图中文名称启发式匹配
-                elif "文本编码器" in widget_type: standard_type = "clip"
-                elif widget_type == "模型": standard_type = "latent_upscale_models"
-                elif widget_type == "model_name" or re.match(r'^model_name_\d+$', widget_type): standard_type = "latent_upscale_models"
-                elif "unet名称" in widget_type.lower(): standard_type = "unet"
-                elif "lora名称" in widget_type.lower(): standard_type = "loras"
-                elif "checkpoint名称" in widget_type.lower(): standard_type = "checkpoints"
-            
-            target_basename = os.path.basename(norm_val).lower()
-            
-            # 本地搜索
-            candidates = []
-            if target_basename in file_index:
-                same_type = [x["full_path"] for x in file_index[target_basename] if x["model_type"] == standard_type]
-                diff_type = [x["full_path"] for x in file_index[target_basename] if x["model_type"] == "diffusion_models"]
-                other_type = [x["full_path"] for x in file_index[target_basename] if x["model_type"] != standard_type and x["model_type"] != "diffusion_models"]
-                
-                if same_type: candidates = same_type
-                elif diff_type: candidates = diff_type
-                else: candidates = other_type
-
-            # 【修复3】为了极致的稳妥，对最终的候选名单进行一次强制去重
-            candidates = list(dict.fromkeys(candidates))
-
-            # 校验存在性
-            norm_current = norm_val.lower()
-            norm_candidates = [normalize_path(c).lower() for c in candidates]
-            if norm_current in norm_candidates: continue 
-
-            # 获取下载链接
-            download_link = None
-            final_download_type = standard_type if standard_type else "uncategorized"
-            
-            if not candidates:
-                if standard_type in dynamic_links and target_basename in dynamic_links[standard_type]:
-                    download_link = dynamic_links[standard_type][target_basename]
-                
-                if not download_link:
-                    for cat, files in dynamic_links.items():
-                        for note_file, note_url in files.items():
-                            if note_file.lower() == target_basename:
-                                download_link = note_url
-                                if cat != "uncategorized": final_download_type = cat
-                                break
-                        if download_link: break
-                
-                if not download_link and local_links_db:
-                    if standard_type in local_links_db:
-                        for db_file, db_url in local_links_db[standard_type].items():
-                            if isinstance(db_url, str) and db_file.lower() == target_basename:
-                                download_link = db_url
-                                break
-                    if not download_link:
-                        for cat, files in local_links_db.items():
-                            if isinstance(files, dict):
-                                for db_file, db_url in files.items():
-                                    if isinstance(db_url, str) and db_file.lower() == target_basename:
-                                        download_link = db_url
-                                        final_download_type = cat 
-                                        break
-                            if download_link: break
-
-            # URL 类型嗅探
-            if download_link:
-                url_decoded = unquote(download_link).lower()
-                if "diffusion_models" in url_decoded: final_download_type = "diffusion_models"
-                elif "text_encoders" in url_decoded: final_download_type = "text_encoders"
-                elif "/vae/" in url_decoded or "/vae." in url_decoded: final_download_type = "vae"
-                elif "lora" in url_decoded: final_download_type = "loras"
-                elif "/unet/" in url_decoded: final_download_type = "unet"
-                elif "/clip/" in url_decoded: final_download_type = "clip"
-                elif "background_removal" in url_decoded: final_download_type = "background_removal"
-                elif "detection" in url_decoded or "mediapipe" in url_decoded or "vitpose" in url_decoded or "yolov10" in url_decoded: final_download_type = "detection"
-                elif "/nlf/" in url_decoded or "nlf_l_multi" in url_decoded: final_download_type = "nlf"
-
-                if "/" in norm_val:
-                    sub_folder = os.path.dirname(norm_val)
-                    if sub_folder and sub_folder not in final_download_type:
-                        final_download_type = f"{final_download_type}/{sub_folder}"
-
-            results.append({
-                "id": item.get("id"), "widget_name": widget_type, "old_value": current_val,
-                "candidates": candidates, "download_url": download_link, "model_type": final_download_type
-            })
-                
+        data = await request.json()
+        if not isinstance(data, dict) or not isinstance(data.get("queries"), list) or not isinstance(data.get("dynamic_links", {}), dict):
+            raise ValueError("扫描参数格式错误")
+        results = await asyncio.to_thread(scan_models, data["queries"], data.get("dynamic_links", {}))
         return web.json_response({"fixed": results})
-    except Exception as e:
-        return web.json_response({"fixed": [], "error": str(e)})
+    except ValueError as error:
+        return web.json_response({"error": str(error)}, status=400)
+    except Exception as error:
+        return web.json_response({"error": f"模型扫描失败：{error}"}, status=500)

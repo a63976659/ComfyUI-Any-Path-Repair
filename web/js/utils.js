@@ -1,125 +1,86 @@
 import { api } from "../../../scripts/api.js";
 
-export function error(...args) { console.error("[Path-Fixer]", ...args); }
-export function log(...args) { console.log("[Path-Fixer]", ...args); }
+const tasks = new Map();
+const taskListeners = new Set();
+export const ACTIVE_STATES = new Set(["queued", "downloading", "cancelling"]);
 
-export async function fetchFixPaths(queries, dynamicLinks = {}) {
+export async function requestJSON(path, body) {
+    let response;
     try {
-        const response = await api.fetchApi("/model_path_fixer/fix", {
+        response = await api.fetchApi("/model_path_fixer/" + path, body === undefined ? {} : {
             method: "POST",
-            body: JSON.stringify({ queries, dynamic_links: dynamicLinks }),
-            headers: { "Content-Type": "application/json" }
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body)
         });
-        if (!response.ok) throw new Error(`API Error: ${response.status}`);
-        return await response.json();
-    } catch (e) {
-        error("请求后端失败:", e);
-        return { fixed: [] };
+    } catch (error) {
+        throw new Error("无法连接 ComfyUI：" + error.message);
     }
-}
-
-export async function fetchActiveDownloads() {
+    let data;
     try {
-        const response = await api.fetchApi("/model_path_fixer/active_tasks");
-        if (!response.ok) return [];
-        const data = await response.json();
-        return data.active || [];
-    } catch (e) { return []; }
-}
-
-export async function downloadModelFromServer(url, filename, modelType) {
-    try {
-        const response = await api.fetchApi("/model_path_fixer/download", {
-            method: "POST",
-            body: JSON.stringify({ url, model_type: modelType, source: "HF Mirror" }),
-            headers: { "Content-Type": "application/json" }
-        });
-        if (!response.ok) throw new Error(`Network Error: ${response.status}`);
-        return await response.json(); 
-    } catch (e) { return { success: false, message: e.message }; }
-}
-
-export async function cancelDownloadFromServer(filename) {
-    try {
-        const response = await api.fetchApi("/model_path_fixer/cancel", {
-            method: "POST",
-            body: JSON.stringify({ filename }),
-            headers: { "Content-Type": "application/json" }
-        });
-        return await response.json();
-    } catch (e) { return { success: false, message: e.message }; }
-}
-
-// 检测是否为子图节点（node.type 为 UUID）
-function isSubgraphNode(nodeType) {
-    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(nodeType);
-}
-
-// 加入 nodeType 验证，防止普通的 "model" 组件误报，但放行 llm 和 tts
-export function isModelWidget(widgetName, nodeType = "") {
-    if (!widgetName) return false;
-    const name = widgetName.toLowerCase();
-    const nType = nodeType.toLowerCase();
-    
-    // --- 防误判机制：放行包含 llm 和 tts 的节点 ---
-    const genericNames = ["model", "模型", "vae", "clip", "text_encoder", "model_name", "模型名称"];
-    if (genericNames.includes(name)) {
-        // 子图节点（UUID类型）直接放行，提升的 widget 必然是模型相关的
-        if (isSubgraphNode(nodeType)) {
-            // 不拒绝，继续到下面的 EXACT_MATCH 检查
-        } else if (!nType.includes("load") && !nType.includes("provider") && !nType.includes("dino") && !nType.includes("sam") && !nType.includes("llm") && !nType.includes("tts") && !nType.includes("landmarker") && !nType.includes("removal") && !nType.includes("moge")) {
-            return false; 
-        }
+        data = await response.json();
+    } catch {
+        throw new Error("服务器返回了无效数据（" + response.status + "）");
     }
-    
-    // 跨插件歧义部件名：yolo_model 在 LayerStyle(models/yolo)、RMBG(models/ultralytics) 与
-    // WanAnimatePreprocess(models/detection) 中指向不同目录，vitpose_model 也被 SCAIL-Pose 用作输入端口，
-    // 因此仅对 ONNX 检测加载器（类名含 onnx）放行；子图节点无法从类型判断，放行后交由后端映射兜底
-    const NODE_SCOPED_MATCH = {
-        "vitpose_model": ["onnx"], "yolo_model": ["onnx"],
-        "vit姿态模型": ["onnx"], "yolo模型": ["onnx"]
-    };
-    const scopedMatch = (n) => {
-        const keys = NODE_SCOPED_MATCH[n];
-        if (!keys) return null;
-        if (isSubgraphNode(nodeType)) return true;
-        return keys.some(k => nType.includes(k));
-    };
-    const scoped = scopedMatch(name);
-    if (scoped !== null) return scoped;
-    
-    const EXACT_MATCH = [
-        "ckpt_name", "vae_name", "lora_name", "clip_name", 
-        "clip_name1", "clip_name2", "clip_name3", 
-        "unet_name", "control_net_name", "style_model_name", 
-        "clip_vision_name", "upscale_model_name", "embedding_name",
-        "diffusion_model_name", "text_encoder_name", 
-        "audio_checkpoint_name", "audio_model_name", "latent_upscale_model_name",
-        "model", "vae", "clip", "text_encoder", "model_name", "模型名称",
-        "gligen_name", "hypernetwork_name", "audio_encoder_name", "photomaker_model_name",
-        "bg_removal_name", "nlf_model",
-        "embedding", "control_net_override",
-        "controlnet名称", "风格模型名称", "clip名称", "checkpoint名称", 
-        "gligen名称", "放大模型名称", "超网络名称", "音频编码器名称", 
-        "照片制作 模型", "embedding嵌入", "control net名称", "control net覆盖", "lora名称",
-        // 子图中文名称
-        "文本编码器", "unet名称", "模型",
-        // 翻译插件生效后的中文部件名（比较时已统一小写）
-        "nlf模型"
-    ];
-    
-    if (EXACT_MATCH.includes(name)) return true;
-    if (name.startsWith("clip_name")) return true;
-    if (name.includes("text_encoder")) return true;
-    if (name.includes("unet") && name.includes("name")) return true;
-    
-    // 子图后缀支持：unet_name_1, lora_name_1, clip_name_2 等
-    if (/^(.+)_\d+$/.test(name)) {
-        const baseName = name.replace(/_\d+$/, '');
-        if (EXACT_MATCH.includes(baseName)) return true;
-        const scopedBase = scopedMatch(baseName);
-        if (scopedBase !== null) return scopedBase;
+    if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error("服务器返回了无效数据");
+    if (!response.ok || data.error || data.success === false) {
+        throw new Error(data.error || data.message || "请求失败（" + response.status + "）");
     }
-    
-    return false;
+    return data;
+}
+
+export async function fetchModelRules() {
+    const rules = await requestJSON("config");
+    if (!rules.widget_types || !rules.node_types || !rules.scoped_widgets || !Array.isArray(rules.generic_widgets) || !Array.isArray(rules.loader_keywords) || !Array.isArray(rules.widget_patterns)) {
+        throw new Error("模型识别配置无效，请更新插件并重启 ComfyUI");
+    }
+    return rules;
+}
+
+export async function fetchFixPaths(queries, dynamicLinks) {
+    const data = await requestJSON("fix", { queries, dynamic_links: dynamicLinks });
+    if (!Array.isArray(data.fixed)) throw new Error("服务器返回的扫描结果无效");
+    return data.fixed;
+}
+
+export function updateTask(task) {
+    if (!task || typeof task.id !== "string") return;
+    const previous = tasks.get(task.id);
+    if (previous && previous.revision > task.revision) return;
+    tasks.set(task.id, task);
+    const finished = [...tasks.values()].filter(item => !ACTIVE_STATES.has(item.status)).sort((a, b) => a.updated_at - b.updated_at);
+    for (const old of finished.slice(0, -128)) tasks.delete(old.id);
+    for (const listener of taskListeners) listener([...tasks.values()]);
+}
+
+api.addEventListener("model_fixer_task", event => updateTask(event.detail));
+
+export function subscribeTasks(listener) {
+    taskListeners.add(listener);
+    listener([...tasks.values()]);
+    return () => taskListeners.delete(listener);
+}
+
+export async function fetchTasks() {
+    const data = await requestJSON("active_tasks");
+    if (!Array.isArray(data.tasks)) throw new Error("服务器返回的下载任务无效");
+    for (const task of data.tasks) updateTask(task);
+    return [...tasks.values()];
+}
+
+export async function downloadModelFromServer(item) {
+    const filename = item.filename || item.old_value?.split(/[\\/]/).pop();
+    const data = await requestJSON("download", {
+        url: item.download_url || item.url,
+        filename,
+        model_type: item.model_type,
+        subfolder: item.subfolder || ""
+    });
+    updateTask(data.task);
+    return data.task;
+}
+
+export async function cancelDownloadFromServer(taskId) {
+    const data = await requestJSON("cancel", { task_id: taskId });
+    updateTask(data.task);
+    return data.task;
 }

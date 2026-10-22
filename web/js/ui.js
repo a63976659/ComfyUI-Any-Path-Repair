@@ -1,195 +1,114 @@
-import { api } from "../../../scripts/api.js";
 import { injectCSS } from "./styles.js";
 import { showResultDialog } from "./dialog.js";
+import { ACTIVE_STATES, fetchTasks, subscribeTasks } from "./utils.js";
 
-// 判断元素及其父容器是否真实可见（排除 display:none 的隐藏容器；
-// 新版 ComfyUI 中 .comfy-menu/menuContainer 仍存在但被隐藏，必须检测可见性）
-function isVisibleEl(el) {
-    if (!el || !el.isConnected) return false;
-    const r = el.getBoundingClientRect();
-    if (r.width <= 0 || r.height <= 0) return false;
-    const pr = el.parentElement?.getBoundingClientRect();
-    return !!pr && pr.width > 0 && pr.height > 0;
+function isVisibleEl(element) {
+    if (!element?.isConnected) return false;
+    const rect = element.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
 }
 
 export class FixerUI {
-    
     constructor(onClickHandler) {
         this.onClickHandler = onClickHandler;
         this.buttonElement = null;
-        injectCSS(); 
-        this.setupStatusListener();
+        this._insertedEl = null;
+        this.processing = false;
+        this.label = null;
+        this.downloadCount = 0;
+        this.resultState = null;
+        this.feedbackTimer = null;
+        injectCSS();
+        subscribeTasks(tasks => {
+            this.downloadCount = tasks.filter(task => ACTIVE_STATES.has(task.status)).length;
+            this._renderButtonState();
+        });
     }
 
-    setButtonState(isProcessing, text = null) {
+    setButtonState(processing, label = null) {
+        if (this.feedbackTimer) clearTimeout(this.feedbackTimer);
+        this.feedbackTimer = null;
+        this.processing = processing;
+        this.label = label;
+        this._renderButtonState();
+        if (!processing && label) this.feedbackTimer = setTimeout(() => this.setButtonState(false), 2500);
+    }
+
+    _renderButtonState() {
         if (!this.buttonElement) return;
-        const label = text || (isProcessing ? "修复中..." : "🔧 修复模型路径");
-        
-        if (this.buttonElement.setLabel) this.buttonElement.setLabel(label);
-        else this.buttonElement.innerText = label;
-
-        const el = this.buttonElement.element || this.buttonElement;
-        if (isProcessing) el.classList.add("fixer-processing");
-        else el.classList.remove("fixer-processing");
+        this.buttonElement.textContent = this.label || (this.processing ? "修复中..." : "🔧 修复路径" + (this.downloadCount ? " | 下载 " + this.downloadCount : ""));
+        this.buttonElement.disabled = this.processing;
+        this.buttonElement.classList.toggle("fixer-processing", this.processing);
     }
 
-    showResultDialog(conflicts, downloads, unknowns, onConfirm) {
-        showResultDialog(this, conflicts, downloads, unknowns, onConfirm);
+    showResultDialog(state) {
+        this.setResult(state);
+        showResultDialog(state, this.buttonElement);
     }
 
-    setupStatusListener() {
-        api.addEventListener("model_fixer_download_status", (event) => {
-            const data = event.detail;
-            const safeName = data.filename.replace(/[^\w\-\.]/g, '_');
-            const btn = document.getElementById(`btn-dl-${safeName}`);
-
-            if (data.success) {
-                if (btn) {
-                    btn.textContent = "✅ 已完成 (请刷新)";
-                    btn.style.background = "#2a7a3b";
-                    btn.onclick = null;
-                }
-                alert(`✅ 下载完成！\n文件: ${data.filename}\n请刷新 ComfyUI 以加载模型。`);
-            } else {
-                if (btn) {
-                    btn.disabled = false;
-                    btn.textContent = "❌ 失败/重试";
-                    btn.style.background = "#a00"; 
-                }
-                if (data.error !== "用户中断") {
-                    alert(`❌ 下载失败: ${data.filename}\n原因: ${data.error}`);
-                }
-            }
-        });
-
-        api.addEventListener("model_fixer_download_progress", (event) => {
-            const data = event.detail; 
-            const safeName = data.filename.replace(/[^\w\-\.]/g, '_');
-            const btn = document.getElementById(`btn-dl-${safeName}`);
-            
-            if (btn) {
-                let pct = 0;
-                if (data.total > 0) pct = Math.round((data.current / data.total) * 100);
-                btn.textContent = `❌ 中断 (${pct}%)`;
-                btn.style.background = "#d32f2f";
-                btn.disabled = false;
-            }
-        });
+    setResult(state) {
+        this.resultState = state;
     }
 
-    // 查找插入锚点：可见菜单 → 命令栏 settingsGroup → 顶栏
-    // 返回 { kind, anchor }；找不到返回 null（锚点可能尚未就绪，由调用方轮询重试）
+    async showLastResult() {
+        if (this.processing) return;
+        const state = this.resultState || { conflicts: [], downloads: [], unknowns: [], changes: [], warnings: [], message: "暂无扫描记录。" };
+        try {
+            await fetchTasks();
+        } catch (error) {
+            state.warnings.push(error.message);
+        }
+        this.showResultDialog(state);
+    }
+
     _findVisibleAnchor(app) {
-        const comfyMenu = document.querySelector(".comfy-menu");
-        if (comfyMenu && isVisibleEl(comfyMenu) && app.ui?.menuContainer && isVisibleEl(app.ui.menuContainer)) {
-            return { kind: "legacy", anchor: app.ui.menuContainer };
-        }
-        const settingsGroupEl = app.menu?.settingsGroup?.element;
-        if (settingsGroupEl?.parentElement) {
-            return { kind: "settingsGroup", anchor: settingsGroupEl };
-        }
-        const topRight = document.querySelector(".workflow-tabs-container .ml-auto");
-        if (topRight && isVisibleEl(topRight)) {
-            return { kind: "topRight", anchor: topRight };
-        }
-        const topBar = document.querySelector(".workflow-tabs-container");
-        if (topBar && isVisibleEl(topBar)) {
-            return { kind: "topBar", anchor: topBar };
-        }
-        return null;
+        const menu = document.querySelector(".comfy-menu");
+        if (isVisibleEl(menu) && isVisibleEl(app.ui?.menuContainer)) return { kind: "legacy", anchor: app.ui.menuContainer };
+        const settings = app.menu?.settingsGroup?.element;
+        if (settings?.parentElement) return { kind: "settingsGroup", anchor: settings };
+        const right = document.querySelector(".workflow-tabs-container .ml-auto");
+        if (isVisibleEl(right)) return { kind: "topRight", anchor: right };
+        const top = document.querySelector(".workflow-tabs-container");
+        return isVisibleEl(top) ? { kind: "topBar", anchor: top } : null;
     }
 
-    // 把按钮挂到找到的可见锚点；成功返回 true（幂等：已挂载则直接成功）
     _insertButton(app) {
-        if (this.buttonElement && this.buttonElement.isConnected) return true;
         const hit = this._findVisibleAnchor(app);
         if (!hit) return false;
-
-        let el;           // 实际插入 DOM 的节点
-        let labelTarget;  // setButtonState 的更新目标（带文字/setLabel 的节点）
-        if (hit.kind === "legacy") {
-            // 旧版 UI：左侧菜单 .comfy-menu，原生按钮即可
-            el = document.createElement("button");
-            el.id = "fixer-legacy-btn";
-            el.className = "fixer-btn-legacy-ui";
-            el.textContent = "🔧 修复路径";
-            el.title = "扫描并修复丢失引用的模型路径";
-            el.addEventListener("click", async () => await this.onClickHandler(this));
-            labelTarget = el;
-            hit.anchor.appendChild(el);
-        } else {
-            // 新版 UI：优先 ComfyButton（融入原生样式），API 缺失时降级原生按钮
-            if (window?.comfyAPI?.button?.ComfyButton && window?.comfyAPI?.buttonGroup?.ComfyButtonGroup) {
-                const ComfyButton = window.comfyAPI.button.ComfyButton;
-                const ComfyButtonGroup = window.comfyAPI.buttonGroup.ComfyButtonGroup;
-                const btn = new ComfyButton({
-                    action: async () => await this.onClickHandler(this),
-                    tooltip: "扫描并修复丢失引用的模型路径",
-                    content: "🔧 修复路径",
-                    classList: "fixer-btn-new-ui"
-                });
-                btn.element.setLabel = (txt) => {
-                    if (btn.element.firstChild) btn.element.firstChild.textContent = txt;
-                    else btn.element.innerText = txt;
-                };
-                el = new ComfyButtonGroup(btn.element).element;
-                labelTarget = btn.element;
-            } else {
-                el = document.createElement("button");
-                el.id = "fixer-legacy-btn";
-                el.className = "fixer-btn-legacy-ui";
-                el.textContent = "🔧 修复路径";
-                el.title = "扫描并修复丢失引用的模型路径";
-                el.addEventListener("click", async () => await this.onClickHandler(this));
-                labelTarget = el;
-            }
-            if (hit.kind === "settingsGroup") hit.anchor.before(el);
-            else if (hit.kind === "topRight") hit.anchor.prepend(el);
-            else hit.anchor.appendChild(el);
+        if (!this.buttonElement) {
+            this.buttonElement = document.createElement("button");
+            this.buttonElement.id = "path-fixer-button";
+            this.buttonElement.type = "button";
+            this.buttonElement.className = "fixer-toolbar-button";
+            this.buttonElement.title = "点击扫描修复；右键查看最近结果、撤销修复和管理下载任务";
+            this.buttonElement.addEventListener("click", () => this.onClickHandler(this));
+            this.buttonElement.addEventListener("contextmenu", event => {
+                event.preventDefault();
+                this.showLastResult();
+            });
+            this._insertedEl = document.createElement("div");
+            this._insertedEl.className = "fixer-toolbar-group";
+            this._insertedEl.appendChild(this.buttonElement);
+            this._renderButtonState();
         }
-
-        this.buttonElement = labelTarget;
-        this._insertedEl = el; // 看门狗移除时以插入节点为准（含 ComfyButtonGroup 包裹层）
+        const root = this._insertedEl;
+        root.classList.toggle("fixer-legacy-group", hit.kind === "legacy");
+        if (hit.kind === "settingsGroup") {
+            if (root.parentElement !== hit.anchor.parentElement) hit.anchor.before(root);
+        } else if (root.parentElement !== hit.anchor) {
+            if (hit.kind === "topRight") hit.anchor.prepend(root);
+            else hit.anchor.appendChild(root);
+        }
         return true;
     }
 
     addPanelButtons(app) {
-        if (this._insertButton(app)) {
-            this._startWatchdog(app);
-            return;
-        }
-        // 锚点可能尚未就绪，轮询重试（最多 30 秒）
-        let tries = 0;
-        const timer = setInterval(() => {
-            tries++;
-            if (this._insertButton(app)) {
-                clearInterval(timer);
-                this._startWatchdog(app);
-            } else if (tries >= 60) {
-                clearInterval(timer);
-                console.error("[Path-Fixer] 未找到可用的菜单锚点，修复按钮未插入");
-            }
-        }, 500);
+        this._insertButton(app);
+        this._startWatchdog(app);
     }
 
-    // 低频看门狗：恢复按钮挂载，并在命令栏就绪后从顶栏移回
     _startWatchdog(app) {
         if (this._watchdog) clearInterval(this._watchdog);
-        this._watchdog = setInterval(() => {
-            const insertedEl = this._insertedEl || this.buttonElement;
-            const hit = this._findVisibleAnchor(app);
-            if (insertedEl && hit?.kind === "settingsGroup") {
-                if (insertedEl.parentElement !== hit.anchor.parentElement) {
-                    hit.anchor.before(insertedEl);
-                }
-                if (!insertedEl.isConnected) return;
-            }
-            if (!this.buttonElement || !this.buttonElement.isConnected || !isVisibleEl(this.buttonElement)) {
-                (this._insertedEl || this.buttonElement)?.remove?.();
-                this.buttonElement = null;
-                this._insertedEl = null;
-                this._insertButton(app);
-            }
-        }, 2000);
+        this._watchdog = setInterval(() => this._insertButton(app), 2000);
     }
 }
