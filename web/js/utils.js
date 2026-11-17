@@ -2,6 +2,7 @@ import { api } from "../../../scripts/api.js";
 
 const tasks = new Map();
 const taskListeners = new Set();
+let taskRefresh = 0;
 export const ACTIVE_STATES = new Set(["queued", "downloading", "cancelling"]);
 
 export async function requestJSON(path, body) {
@@ -42,17 +43,29 @@ export async function fetchFixPaths(queries, dynamicLinks) {
     return data.fixed;
 }
 
-export function updateTask(task) {
+function mergeTask(task) {
     if (!task || typeof task.id !== "string") return;
     const previous = tasks.get(task.id);
-    if (previous && previous.revision > task.revision) return;
+    if (previous && previous.revision >= task.revision) return;
     tasks.set(task.id, task);
+}
+
+function notifyTasks() {
     const finished = [...tasks.values()].filter(item => !ACTIVE_STATES.has(item.status)).sort((a, b) => a.updated_at - b.updated_at);
     for (const old of finished.slice(0, -128)) tasks.delete(old.id);
-    for (const listener of taskListeners) listener([...tasks.values()]);
+    const snapshot = [...tasks.values()];
+    for (const listener of taskListeners) listener(snapshot);
+}
+
+export function updateTask(task) {
+    mergeTask(task);
+    notifyTasks();
 }
 
 api.addEventListener("model_fixer_task", event => updateTask(event.detail));
+api.addEventListener("reconnected", () => {
+    fetchTasks().catch(error => console.warn("[Path-Fixer] 无法恢复下载任务：", error));
+});
 
 export function subscribeTasks(listener) {
     taskListeners.add(listener);
@@ -61,9 +74,17 @@ export function subscribeTasks(listener) {
 }
 
 export async function fetchTasks() {
+    const request = ++taskRefresh;
+    const previous = new Map(tasks);
     const data = await requestJSON("active_tasks");
     if (!Array.isArray(data.tasks)) throw new Error("服务器返回的下载任务无效");
-    for (const task of data.tasks) updateTask(task);
+    if (request !== taskRefresh) return [...tasks.values()];
+    const ids = new Set(data.tasks.map(task => task.id));
+    for (const [id, task] of previous) {
+        if (!ids.has(id) && tasks.get(id) === task) tasks.delete(id);
+    }
+    for (const task of data.tasks) mergeTask(task);
+    notifyTasks();
     return [...tasks.values()];
 }
 

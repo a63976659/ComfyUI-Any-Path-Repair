@@ -1,5 +1,5 @@
 import { app } from "../../../scripts/app.js";
-import { fetchFixPaths, fetchModelRules, fetchTasks } from "./utils.js";
+import { fetchFixPaths, fetchModelRules } from "./utils.js";
 import { applyFixes, collectQueries, extractLinksFromWorkflow, undoFixes } from "./workflow.js";
 import { FixerUI } from "./ui.js";
 
@@ -13,7 +13,7 @@ async function executePathFix(ui) {
     const graph = app.graph;
     let completionLabel = null;
     try {
-        const [rules] = await Promise.all([fetchModelRules(), fetchTasks(), app.reloadNodeDefs()]);
+        const [rules] = await Promise.all([fetchModelRules(), app.reloadNodeDefs()]);
         const { queries, snapshot } = collectQueries(graph, rules);
         const results = queries.length ? await fetchFixPaths(queries, extractLinksFromWorkflow(graph)) : [];
         const conflicts = results.filter(item => item.candidates.length > 1);

@@ -58,14 +58,17 @@ class DownloadManager:
         for task in finished[:-128]:
             del self.tasks[task.id]
 
+    def _update_locked(self, task, **changes):
+        for name, value in changes.items():
+            setattr(task, name, value)
+        task.revision += 1
+        task.updated_at = time.time()
+        self._prune()
+        return task.public()
+
     def _update(self, task, **changes):
         with self.lock:
-            for name, value in changes.items():
-                setattr(task, name, value)
-            task.revision += 1
-            task.updated_at = time.time()
-            snapshot = task.public()
-            self._prune()
+            snapshot = self._update_locked(task, **changes)
         self._notify(snapshot)
 
     def snapshots(self):
@@ -119,19 +122,18 @@ class DownloadManager:
             if task.status not in ACTIVE_STATES:
                 return task.public()
             task.cancel_event.set()
-            task.status = "cancelled" if task.status == "queued" else "cancelling"
-            task.revision += 1
-            task.updated_at = time.time()
-            snapshot = task.public()
+            snapshot = self._update_locked(task, status="cancelled" if task.status == "queued" else "cancelling")
         self._notify(snapshot)
         return snapshot
 
     def _run(self, task):
         part_path = task.path + "." + task.id + ".part"
         try:
-            if task.cancel_event.is_set():
-                raise InterruptedError("下载已取消")
-            self._update(task, status="downloading")
+            with self.lock:
+                if task.cancel_event.is_set():
+                    raise InterruptedError("下载已取消")
+                snapshot = self._update_locked(task, status="downloading")
+            self._notify(snapshot)
             os.makedirs(os.path.dirname(task.path), exist_ok=True)
             request = urllib.request.Request(task.url, headers={"User-Agent": "ComfyUI-Any-Path-Repair"})
             with urllib.request.urlopen(request, timeout=30) as response:
@@ -162,6 +164,8 @@ class DownloadManager:
                 if downloaded == 0 or (total and downloaded != total):
                     raise ValueError(f"下载不完整：收到 {downloaded} 字节，预期 {total or '非空文件'}")
             with self.lock:
+                if task.cancel_event.is_set():
+                    raise InterruptedError("下载已取消")
                 try:
                     if os.name == "nt":
                         os.rename(part_path, task.path)
@@ -169,11 +173,12 @@ class DownloadManager:
                         os.link(part_path, task.path)
                 except FileExistsError:
                     raise FileExistsError("目标文件已由其他操作创建，本次下载未覆盖它") from None
-            self._update(task, status="completed", current=downloaded, total=total or downloaded)
+                snapshot = self._update_locked(task, status="completed", current=downloaded, total=total or downloaded)
+            self._notify(snapshot)
         except InterruptedError as error:
             self._update(task, status="cancelled", error=str(error))
         except Exception as error:
-            self._update(task, status="failed", error=str(error))
+            self._update(task, status="cancelled" if task.cancel_event.is_set() else "failed", error=str(error))
         finally:
             if os.path.exists(part_path):
                 try:

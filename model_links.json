@@ -363,6 +363,7 @@
   "audio_checkpoints": {
     "__comment": "对应 audio_encoders",
     "folder_name": "audio_encoders",
+    "model_types": ["audio_encoders", "wav2vec2"],
     "wav2vec2-chinese-base_fp16.safetensors": "https://huggingface.co/Kijai/wav2vec2_safetensors/resolve/main/wav2vec2-chinese-base_fp16.safetensors",
     "wav2vec2_large_english_fp16.safetensors": "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/audio_encoders/wav2vec2_large_english_fp16.safetensors"
   },

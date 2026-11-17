@@ -5,7 +5,7 @@ import folder_paths
 from aiohttp import web
 
 from .config import canonical_type, resolve_model_type
-from .core_utils import infer_url_type, load_local_links, model_subfolder, normalize_path, path_key
+from .core_utils import infer_url_type, load_local_links, model_subfolder, normalize_path, path_key, safe_subfolder
 
 
 def build_file_index(model_types):
@@ -34,19 +34,27 @@ def find_download_link(basename, model_type, databases):
             if not isinstance(links, dict):
                 continue
             category_type = canonical_type(category)
-            if model_type and category_type not in {model_type, "uncategorized"}:
+            folder = safe_subfolder(links.get("folder_name", category))
+            folder_type, _, subfolder = folder.partition("/")
+            folder_type = canonical_type(folder_type)
+            model_types = links.get("model_types", [])
+            if not isinstance(model_types, list) or any(not isinstance(name, str) for name in model_types):
+                raise ValueError("下载链接的模型类型配置错误")
+            compatible_types = {category_type, folder_type, *(canonical_type(name) for name in model_types)}
+            if model_type and model_type not in compatible_types and category_type != "uncategorized":
                 continue
             for name, url in links.items():
-                if name.casefold() == basename and isinstance(url, str):
-                    priority = 0 if model_type and category_type == model_type else 1
-                    matches.append((priority, url, model_type or (category_type if category != "uncategorized" else infer_url_type(url))))
+                if not name.startswith("__") and name not in {"folder_name", "model_types"} and name.casefold() == basename and isinstance(url, str):
+                    download_type = model_type or (folder_type if category_type != "uncategorized" else infer_url_type(url))
+                    priority = 0 if model_type and model_type in compatible_types else 1
+                    matches.append((priority, url, download_type, subfolder if download_type == folder_type else ""))
         if matches:
             priority = min(match[0] for match in matches)
-            unique = list(dict.fromkeys((url, category) for rank, url, category in matches if rank == priority))
+            unique = list(dict.fromkeys((url, category, subfolder) for rank, url, category, subfolder in matches if rank == priority))
             if len(unique) == 1:
                 return unique[0]
-            return None, model_type
-    return None, model_type
+            return None, model_type, ""
+    return None, model_type, ""
 
 
 def scan_models(queries, dynamic_links):
@@ -76,11 +84,11 @@ def scan_models(queries, dynamic_links):
             if value and path_key(value) in {path_key(candidate) for candidate in candidates}:
                 continue
         candidates = list(dict.fromkeys(candidates))
-        url, download_type = (None, model_type) if candidates else find_download_link(basename, model_type, (dynamic_links, local_links))
+        url, download_type, link_subfolder = (None, model_type, "") if candidates else find_download_link(basename, model_type, (dynamic_links, local_links))
         results.append({
             "id": item.get("id"), "widget_name": item["type"], "old_value": value,
             "candidates": candidates, "download_url": url, "model_type": download_type,
-            "subfolder": model_subfolder(value, download_type),
+            "subfolder": model_subfolder(value, download_type) or link_subfolder,
         })
     return results
 

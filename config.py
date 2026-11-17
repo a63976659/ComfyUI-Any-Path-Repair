@@ -10,13 +10,13 @@ MANUAL_MAPPING = {
     "ckpt_name": "checkpoints", "checkpoint名称": "checkpoints",
     "vae_name": "vae", "vae": "vae", "lora_name": "loras", "lora名称": "loras",
     "unet_name": "diffusion_models", "unet名称": "diffusion_models", "diffusion_model_name": "diffusion_models",
-    "clip_name": "text_encoders", "clip_name1": "text_encoders", "clip_name2": "text_encoders", "clip_name3": "text_encoders",
+    "clip_name": "text_encoders",
     "clip": "text_encoders", "clip名称": "text_encoders", "text_encoder_name": "text_encoders", "text_encoder": "text_encoders", "文本编码器": "text_encoders",
     "control_net_name": "controlnet", "control_net_override": "controlnet", "controlnet名称": "controlnet", "control net名称": "controlnet", "control net覆盖": "controlnet",
     "style_model_name": "style_models", "风格模型名称": "style_models", "clip_vision_name": "clip_vision",
     "upscale_model_name": "upscale_models", "放大模型名称": "upscale_models",
     "embedding_name": "embeddings", "embedding": "embeddings", "embedding嵌入": "embeddings",
-    "audio_checkpoint_name": "audio_checkpoints", "audio_model_name": "audio_checkpoints", "audio_encoder_name": "audio_checkpoints", "音频编码器名称": "audio_checkpoints",
+    "audio_checkpoint_name": "audio_checkpoints", "audio_model_name": "audio_checkpoints", "audio_encoder_name": "audio_encoders", "音频编码器名称": "audio_encoders",
     "latent_upscale_model_name": "latent_upscale_models", "gligen_name": "gligen", "gligen名称": "gligen",
     "hypernetwork_name": "hypernetworks", "超网络名称": "hypernetworks",
     "photomaker_model_name": "photomaker", "照片制作 模型": "photomaker", "bg_removal_name": "background_removal",
@@ -24,8 +24,8 @@ MANUAL_MAPPING = {
 }
 NODE_SPECIFIC_MAPPING = {
     "LatentUpscaleModelLoader": "latent_upscale_models", "UltralyticsDetectorProvider": "ultralytics",
-    "UpscaleModelLoader": "upscale_models", "LTXVAudioVAELoader": "vae", "LoadWanVideoT5TextEncoder": "text_encoders",
-    "Wav2VecModelLoader": "audio_checkpoints", "GroundingDinoModelLoader_SDPose": "grounding-dino",
+    "UpscaleModelLoader": "upscale_models", "LTXVAudioVAELoader": "checkpoints", "LoadWanVideoT5TextEncoder": "text_encoders",
+    "AudioEncoderLoader": "audio_encoders", "Wav2VecModelLoader": "wav2vec2", "GroundingDinoModelLoader_SDPose": "grounding-dino",
     "AnimateDiffModuleLoader": "animatediff_models", "SAMLoader": "sams",
     "LLM_Chat_Node": "LLM", "LLM_Translator_Node": "LLM",
     "Qwen_TTS_Node": "TTS", "Qwen_TTS_VoiceDesign_Node": "TTS", "Qwen_TTS_VoiceClone_Node": "TTS",
@@ -86,5 +86,7 @@ def register_custom_paths():
     for name in ("background_removal", "detection", "geometry_estimation", "nlf", "LLM", "TTS", "audio_checkpoints"):
         if name not in folder_paths.folder_names_and_paths:
             folder_paths.folder_names_and_paths[name] = ([os.path.join(folder_paths.models_dir, name)], set(folder_paths.supported_pt_extensions))
-    paths, extensions = folder_paths.folder_names_and_paths["detection"]
-    folder_paths.folder_names_and_paths["detection"] = (paths, set(extensions) | {".onnx"})
+    for name, extension in (("detection", ".onnx"), ("nlf", ".torchscript")):
+        paths, extensions = folder_paths.folder_names_and_paths[name]
+        if extensions:
+            folder_paths.folder_names_and_paths[name] = (paths, set(extensions) | {extension})
